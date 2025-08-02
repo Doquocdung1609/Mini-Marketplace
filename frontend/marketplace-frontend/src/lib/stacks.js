@@ -15,7 +15,8 @@ let mockProducts = [
     image: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?fit=crop&w=150&h=150", 
     quantity: 10, 
     sold: 2, 
-    revenue: 2000000 
+    revenue: 2000000, 
+    category: "Ebook"
   },
   { 
     id: 2, 
@@ -27,7 +28,8 @@ let mockProducts = [
     image: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?fit=crop&w=150&h=150",
     quantity: 5, 
     sold: 1, 
-    revenue: 500000 
+    revenue: 500000,
+    category: "Photos"
   },
   { 
     id: 3, 
@@ -39,9 +41,10 @@ let mockProducts = [
     image: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?fit=crop&w=150&h=150",
     quantity: 8, 
     sold: 0, 
-    revenue: 0 
+    revenue: 0,
+    category: "Templates" 
   },
-    { 
+  { 
     id: 4, 
     name: "NFT Music Track", 
     ipfsHash: "QmYoypizjW3WknFiJnKLwHCnL72vedxjQkDDP1mXWo6uco", 
@@ -51,7 +54,8 @@ let mockProducts = [
     image: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?fit=crop&w=150&h=150",
     quantity: 5, 
     sold: 1, 
-    revenue: 500000 
+    revenue: 500000,
+    category: "Templates" 
   },
   { 
     id: 5, 
@@ -63,7 +67,8 @@ let mockProducts = [
     image: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?fit=crop&w=150&h=150",
     quantity: 8, 
     sold: 0, 
-    revenue: 0 
+    revenue: 0,
+    category: "Templates"
   },
 ];
 
@@ -81,8 +86,22 @@ const explorerApi = 'https://api.testnet.stacks.co/extended/v1';
 const pinataApiKey = 'c51d36141a1da34c7a91';
 const pinataSecretApiKey = '6dc64c7882065fc575596d7476d4d7e7e73f4ac55214bcef18794dc7b72105e6';
 
-export async function uploadToIPFS(file) {
-  return `ipfs://mockHash${Date.now()}`;
+export async function uploadToIPFS(data) {
+  if (data instanceof File) {
+    const formData = new FormData();
+    formData.append('image', data);
+    const url = `https://api.pinata.cloud/pinning/pinFileToIPFS`;
+    const response = await axios.post(url, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+        'pinata_api_key': pinataApiKey,
+        'pinata_secret_api_key': pinataSecretApiKey
+      }
+    });
+    return `https://gateway.pinata.cloud/ipfs/${response.data.IpfsHash}`;
+  } else {
+    return `ipfs://mockHash${Date.now()}`; // Giả lập cho string
+  }
 }
 
 export async function connectWallet() {
@@ -102,10 +121,14 @@ export async function callReadOnly(functionName, args, userAddress) {
   return { value: null };
 }
 
-export async function listProduct(ipfsHash, price, user, name, description, image, quantity) {
+export async function listProduct(ipfsHash, price, user, name, description, image, quantity, category) {
   return new Promise((resolve) => {
-    setTimeout(() => {
-      const newProduct = { id: mockProducts.length + 1, name, ipfsHash, price, owner: user.stacksAddress, description, image, quantity, sold: 0, revenue: 0 };
+    setTimeout(async () => {
+      let imageHash = image;
+      if (image instanceof File) {
+        imageHash = await uploadToIPFS(image);
+      }
+      const newProduct = { id: mockProducts.length + 1, name, ipfsHash, price, owner: user.stacksAddress, description, image: imageHash, quantity, sold: 0, revenue: 0, category };
       mockProducts.push(newProduct);
       resolve({ success: true });
     }, 500);
@@ -144,7 +167,7 @@ export async function unlistProduct(productId, user) {
   });
 }
 
-export async function updateProduct(productId, newIpfsHash, newPrice, user, newQuantity) {
+export async function updateProduct(productId, newIpfsHash, newPrice, user, newQuantity, newCategory) {
   return new Promise((resolve) => {
     setTimeout(() => {
       const product = mockProducts.find(p => p.id === productId && p.owner === user.stacksAddress);
@@ -152,6 +175,7 @@ export async function updateProduct(productId, newIpfsHash, newPrice, user, newQ
         product.ipfsHash = newIpfsHash;
         product.price = newPrice;
         product.quantity = newQuantity;
+        product.category = newCategory;
         resolve({ success: true });
       } else {
         resolve({ success: false });

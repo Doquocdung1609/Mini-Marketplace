@@ -15,17 +15,20 @@ function ProductList({ products, userAddress, onBuyProduct, onUnlistProduct, onS
 
   return (
     <div className="container mx-auto py-10">
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
         {products.map((product) => (
           <div
             key={product.id}
-            className="bg-white p-4 rounded-lg shadow-md hover:shadow-lg transition"
+            className="bg-white p-4 rounded-lg shadow-md hover:shadow-lg transition transform hover:scale-105 border border-gray-200"
           >
             <img src={product.image} alt={product.name} className="w-full h-40 object-cover rounded-lg mb-4" />
-            <div className="text-center">
+            <div className="text-center space-y-2">
               <h3 className="text-lg font-semibold text-gray-800">{product.name}</h3>
               <p className="text-gray-600"><strong>Price:</strong> {product.price} microSTX</p>
               <p className="text-gray-600"><strong>Quantity:</strong> {product.quantity}</p>
+              <p className="text-gray-600"><strong>Sold:</strong> {product.sold}</p>
+              <p className="text-gray-600"><strong>Rating:</strong> {product.avgRating.toFixed(1)} / 5</p>
+              <p className="text-gray-600"><strong>Revenue:</strong> {product.revenue} microSTX</p>
               {role === 'buyer' && product.quantity > 0 && (
                 <button
                   onClick={() => onBuyProduct(product.id)}

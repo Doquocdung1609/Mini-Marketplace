@@ -1,10 +1,57 @@
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import Chart from 'chart.js/auto';
 
-function SellerProductManagement({ products, onUnlistProduct, onUpdateProduct }) {
-  const [editProductId, setEditProductId] = React.useState(null);
-  const [newIpfsHash, setNewIpfsHash] = React.useState('');
-  const [newPrice, setNewPrice] = React.useState('');
-  const [newQuantity, setNewQuantity] = React.useState('');
+function SellerProductManagement({ products, onUnlistProduct, onUpdateProduct, transactions }) {
+  const [editProductId, setEditProductId] = useState(null);
+  const [newIpfsHash, setNewIpfsHash] = useState('');
+  const [newPrice, setNewPrice] = useState('');
+  const [newQuantity, setNewQuantity] = useState('');
+  const profitChartRef = useRef(null);
+  const chartInstanceRef = useRef(null); // Theo dõi instance chart
+
+  useEffect(() => {
+    const ctx = profitChartRef.current?.getContext('2d');
+    if (ctx && products.length > 0) {
+      // Phá hủy chart cũ nếu tồn tại
+      if (chartInstanceRef.current) {
+        chartInstanceRef.current.destroy();
+      }
+      const revenueData = transactions
+        .filter(tx => products.some(p => p.id === tx.productId && p.owner === products[0]?.owner))
+        .reduce((acc, tx) => {
+          const date = new Date(tx.timestamp).toLocaleDateString();
+          acc[date] = (acc[date] || 0) + tx.amount;
+          return acc;
+        }, {});
+      chartInstanceRef.current = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: Object.keys(revenueData),
+          datasets: [{
+            label: 'Profit (microSTX)',
+            data: Object.values(revenueData),
+            borderColor: 'rgba(54, 162, 235, 1)',
+            backgroundColor: 'rgba(54, 162, 235, 0.2)',
+            fill: true,
+            tension: 0.1
+          }]
+        },
+        options: {
+          scales: { y: { beginAtZero: true } },
+          plugins: {
+            legend: { position: 'top' },
+            title: { display: true, text: 'Profit Over Time' }
+          }
+        }
+      });
+    }
+    // Cleanup khi component unmount
+    return () => {
+      if (chartInstanceRef.current) {
+        chartInstanceRef.current.destroy();
+      }
+    };
+  }, [transactions, products]); // Loại bỏ profitChart khỏi dependency
 
   const handleUpdate = (productId) => {
     onUpdateProduct(productId, newIpfsHash, parseInt(newPrice), parseInt(newQuantity));
@@ -15,7 +62,7 @@ function SellerProductManagement({ products, onUnlistProduct, onUpdateProduct })
   };
 
   return (
-    <div className="bg-white mt-10 p-6 rounded-lg shadow-lg">
+    <div className="bg-white mt-10 p-6 rounded-lg shadow-lg seller-dashboard">
       <h2 className="text-2xl font-bold text-gray-800 mb-4">Manage Your Products</h2>
       <table className="w-full border-collapse">
         <thead>
@@ -100,6 +147,9 @@ function SellerProductManagement({ products, onUnlistProduct, onUpdateProduct })
           )}
         </tbody>
       </table>
+      <div style={{ marginTop: '10px' }}>
+        <canvas ref={profitChartRef} style={{ maxWidth: '100%', height: 'auto' }}></canvas>
+      </div>
     </div>
   );
 }

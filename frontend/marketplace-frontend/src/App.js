@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { BrowserRouter as Router, Route, Routes, Navigate, useLocation, Link, useNavigate } from 'react-router-dom';
 import { connectWallet, listProduct, buyProduct, unlistProduct, updateProduct, rateProduct, getTransactionHistory, deleteProduct, mockProducts, mockRatings, downloadLinks } from './lib/stacks';
 import ProductList from './components/ProductList';
@@ -6,6 +6,7 @@ import ProductForm from './components/ProductForm';
 import TransactionHistory from './components/TransactionHistory';
 import SellerProductManagement from './components/SellerProductManagement';
 import ProductDetailPage from './components/ProductDetailPage';
+import Chart from 'chart.js/auto';
 import './App.css';
 
 const AppContent = () => {
@@ -20,10 +21,14 @@ const AppContent = () => {
   const [paymentStatus, setPaymentStatus] = useState(null);
   const [showRoleSelection, setShowRoleSelection] = useState(false);
   const [sellerNotifications, setSellerNotifications] = useState({});
-  const [slideIndex, setSlideIndex] = useState(0); // State cho slider
-  const [searchQuery, setSearchQuery] = useState(''); // State cho ô tìm kiếm
+  const [slideIndex, setSlideIndex] = useState(0);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('All');
+  const [categories, setCategories] = useState(['Ebook', 'Photos', 'Templates', 'Music', 'Software']);
   const location = useLocation();
   const navigate = useNavigate();
+  const adminChartRef = useRef(null);
+  const adminChartInstance = useRef(null);
 
   const handleConnectWallet = async () => {
     try {
@@ -74,10 +79,10 @@ const AppContent = () => {
     }
   };
 
-  const handleListProduct = async (ipfsHash, price, name, description, image, quantity) => {
+  const handleListProduct = async (ipfsHash, price, name, description, image, quantity, category) => {
     try {
       if (!user || !user.stacksAddress) throw new Error('User not authenticated');
-      await listProduct(ipfsHash, price, user, name, description, image, quantity);
+      await listProduct(ipfsHash, price, user, name, description, image, quantity, category);
       await fetchProducts();
       await fetchTransactions();
       setError(null);
@@ -120,10 +125,10 @@ const AppContent = () => {
     }
   };
 
-  const handleUpdateProduct = async (productId, newIpfsHash, newPrice, newQuantity) => {
+  const handleUpdateProduct = async (productId, newIpfsHash, newPrice, newQuantity, newCategory) => {
     try {
       if (!user || !user.stacksAddress) throw new Error('User not authenticated');
-      await updateProduct(productId, newIpfsHash, newPrice, user, newQuantity);
+      await updateProduct(productId, newIpfsHash, newPrice, user, newQuantity, newCategory);
       await fetchProducts();
       await fetchTransactions();
       setError(null);
@@ -174,6 +179,19 @@ const AppContent = () => {
     }, 5000);
   };
 
+  const addCategory = (newCategory) => {
+    if (role === 'admin' && newCategory && !categories.includes(newCategory)) {
+      setCategories([...categories, newCategory]);
+    }
+  };
+
+  const removeCategory = (categoryToRemove) => {
+    if (role === 'admin' && categories.length > 1) {
+      setCategories(categories.filter(cat => cat !== categoryToRemove));
+      setSelectedCategory('All');
+    }
+  };
+
   useEffect(() => {
     if (user) {
       fetchProducts();
@@ -181,7 +199,6 @@ const AppContent = () => {
     }
   }, [user]);
 
-  // Quản lý slider
   const nextSlide = () => setSlideIndex((prev) => (prev + 1) % 3);
   const prevSlide = () => setSlideIndex((prev) => (prev - 1 + 3) % 3);
   useEffect(() => {
@@ -191,9 +208,13 @@ const AppContent = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // Sử dụng useMemo để tránh tái tạo suggestedProducts khi slideIndex thay đổi
   const suggestedProducts = useMemo(() => {
-    return [...products].sort(() => 0.5 - Math.random()).slice(0, 4);
+    const popularCategory = [...products].reduce((acc, product) => {
+      acc[product.category] = (acc[product.category] || 0) + 1;
+      return acc;
+    }, {});
+    const topCategory = Object.keys(popularCategory).reduce((a, b) => popularCategory[a] > popularCategory[b] ? a : b, 'Ebook');
+    return [...products].filter(p => p.category === topCategory).sort(() => 0.5 - Math.random()).slice(0, 4);
   }, [products]);
 
   const handleViewSuggestedProduct = (product) => {
@@ -201,16 +222,51 @@ const AppContent = () => {
     navigate(`/product/${product.id}`);
   };
 
-  // Lọc sản phẩm dựa trên searchQuery
   const filteredProducts = useMemo(() => {
     return products.filter(product =>
-      product.name.toLowerCase().includes(searchQuery.toLowerCase())
+      product.name.toLowerCase().includes(searchQuery.toLowerCase()) &&
+      (selectedCategory === 'All' || product.category === selectedCategory)
     );
-  }, [products, searchQuery]);
+  }, [products, searchQuery, selectedCategory]);
+
+  const renderAdminChart = () => {
+    if (adminChartInstance.current) {
+      adminChartInstance.current.destroy();
+    }
+    const ctx = adminChartRef.current?.getContext('2d');
+    if (ctx) {
+      adminChartInstance.current = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: Object.keys(categoryCounts),
+          datasets: [{
+            label: 'Number of Products',
+            data: Object.values(categoryCounts),
+            backgroundColor: 'rgba(75, 192, 192, 0.2)',
+            borderColor: 'rgba(75, 192, 192, 1)',
+            borderWidth: 1
+          }]
+        },
+        options: {
+          scales: { y: { beginAtZero: true } },
+          plugins: {
+            legend: { position: 'top' },
+            title: { display: true, text: 'Products by Category' }
+          }
+        }
+      });
+    }
+  };
+
+  const categoryCounts = useMemo(() => {
+    return products.reduce((acc, product) => {
+      acc[product.category] = (acc[product.category] || 0) + 1;
+      return acc;
+    }, {});
+  }, [products]);
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-100">
-      {/* Header */}
       <header className="bg-gradient-to-r from-blue-600 to-blue-800 text-white p-4 shadow-lg">
         <div className="container mx-auto flex justify-between items-center max-w-7xl">
           <h1 className="text-3xl font-bold">Mini Marketplace</h1>
@@ -225,9 +281,7 @@ const AppContent = () => {
         </div>
       </header>
 
-      {/* Main Content */}
       <div className="flex flex-1">
-        {/* Sidebar (ẩn khi chưa đăng nhập) */}
         {user && (
           <aside className="w-64 bg-white p-6 shadow-lg flex flex-col min-h-[calc(100vh-128px)]">
             <nav className="flex-1">
@@ -240,24 +294,32 @@ const AppContent = () => {
           </aside>
         )}
 
-        {/* Main Content Area */}
         <main className="flex-1 p-6">
           {error && <p className="text-red-500 mb-4">{error}</p>}
           {location.pathname === '/' && (
             <div className="min-h-screen flex flex-col items-center justify-center">
               {user && (
-                <div className="w-full max-w-6xl mb-6">
+                <div className="w-full max-w-6xl mb-6 flex space-x-4">
                   <input
                     type="text"
                     placeholder="Search products..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full p-2 border rounded-lg mb-4"
+                    className="w-3/4 p-2 border rounded-lg"
                   />
+                  <select
+                    value={selectedCategory}
+                    onChange={(e) => setSelectedCategory(e.target.value)}
+                    className="w-1/4 p-2 border rounded-lg"
+                  >
+                    <option value="All">All Categories</option>
+                    {categories.map((cat) => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
                 </div>
               )}
               <h2 className="text-5xl font-bold text-gray-800 mb-12 text-center">Welcome to Market</h2>
-              {/* Slider Quảng Cáo */}
               <div className="w-full max-w-6xl mb-6">
                 <div className="relative w-full overflow-hidden">
                   <div className="flex transition-transform duration-500" style={{ transform: `translateX(-${slideIndex * 100}%)` }}>
@@ -314,29 +376,61 @@ const AppContent = () => {
             </div>
           )}
           {role === 'seller' && location.pathname === '/seller' && (
-            <>
-              <ProductForm onListProduct={handleListProduct} userAddress={user?.stacksAddress} />
+            <div className="w-full max-w-6xl">
+              <ProductForm onListProduct={handleListProduct} userAddress={user?.stacksAddress} categories={categories} />
               <SellerProductManagement
                 products={products.filter(p => p.owner === user?.stacksAddress)}
                 onUnlistProduct={handleUnlistProduct}
                 onUpdateProduct={handleUpdateProduct}
+                transactions={transactions}
               />
               <TransactionHistory transactions={transactions.filter(tx =>
                 mockProducts.find(p => p.id === tx.productId)?.owner === user?.stacksAddress
               )} />
-            </>
+            </div>
           )}
           {role === 'admin' && location.pathname === '/admin' && (
-            <ProductList
-              products={products}
-              userAddress={user?.stacksAddress}
-              onBuyProduct={handleBuyProduct}
-              onUnlistProduct={handleUnlistProduct}
-              onSelectProduct={setSelectedProduct}
-              role={role}
-              onDeleteProduct={handleDeleteProduct}
-              onRemoveProduct={handleRemoveProduct}
-            />
+            <div className="w-full max-w-6xl">
+              <div className="mb-6">
+                <input
+                  type="text"
+                  placeholder="New Category..."
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter' && e.target.value) {
+                      addCategory(e.target.value);
+                      e.target.value = '';
+                    }
+                  }}
+                  className="w-1/2 p-2 border rounded-lg mr-2"
+                />
+                <button
+                  onClick={() => removeCategory(selectedCategory)}
+                  className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700"
+                  disabled={selectedCategory === 'All' || categories.length <= 1}
+                >
+                  Remove Category
+                </button>
+              </div>
+              <ProductList
+                products={products}
+                userAddress={user?.stacksAddress}
+                onBuyProduct={handleBuyProduct}
+                onUnlistProduct={handleUnlistProduct}
+                onSelectProduct={setSelectedProduct}
+                role={role}
+                onDeleteProduct={handleDeleteProduct}
+                onRemoveProduct={handleRemoveProduct}
+              />
+              <div className="mt-6">
+                <canvas ref={adminChartRef} style={{ maxWidth: '100%', height: 'auto' }}></canvas>
+                <button
+                  onClick={renderAdminChart}
+                  className="mt-4 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+                >
+                  Show Category Stats
+                </button>
+              </div>
+            </div>
           )}
           <Routes>
             <Route
@@ -426,7 +520,6 @@ const AppContent = () => {
         </main>
       </div>
 
-      {/* Footer */}
       <footer className="bg-gray-800 text-white p-4">
         <div className="container mx-auto text-center max-w-7xl">
           <p>© 2025 Mini Marketplace. All rights reserved.</p>
