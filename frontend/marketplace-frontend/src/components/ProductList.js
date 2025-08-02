@@ -1,7 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 
-function ProductList({ products, userAddress, onBuyProduct, onUnlistProduct, onSelectProduct, role, onDeleteProduct }) {
+function ProductList({ products, userAddress, onBuyProduct, onUnlistProduct, onSelectProduct, role, onDeleteProduct, onRemoveProduct }) {
   const navigate = useNavigate();
 
   if (!products || products.length === 0) {
@@ -15,7 +15,6 @@ function ProductList({ products, userAddress, onBuyProduct, onUnlistProduct, onS
 
   return (
     <div className="container mx-auto py-10">
-      <h2 className="text-2xl font-bold text-gray-800 mb-6">Products</h2>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
         {products.map((product) => (
           <div
@@ -44,12 +43,20 @@ function ProductList({ products, userAddress, onBuyProduct, onUnlistProduct, onS
                 </button>
               )}
               {role === 'admin' && (
-                <button
-                  onClick={() => onDeleteProduct(product.id)}
-                  className="w-full bg-red-600 text-white py-2 rounded-lg mt-2 hover:bg-red-700 transition"
-                >
-                  Delete
-                </button>
+                <>
+                  <button
+                    onClick={() => onDeleteProduct(product.id)}
+                    className="w-full bg-red-600 text-white py-2 rounded-lg mt-2 hover:bg-red-700 transition"
+                  >
+                    Delete
+                  </button>
+                  <button
+                    onClick={() => onRemoveProduct(product.id, product.owner)}
+                    className="w-full bg-yellow-600 text-white py-2 rounded-lg mt-2 hover:bg-yellow-700 transition"
+                  >
+                    Remove (Scam)
+                  </button>
+                </>
               )}
               <button
                 onClick={() => handleViewDetails(product)}

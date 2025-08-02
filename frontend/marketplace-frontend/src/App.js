@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Route, Routes, Navigate, useLocation, Link } from 'react-router-dom';
+import React, { useState, useEffect, useMemo } from 'react';
+import { BrowserRouter as Router, Route, Routes, Navigate, useLocation, Link, useNavigate } from 'react-router-dom';
 import { connectWallet, listProduct, buyProduct, unlistProduct, updateProduct, rateProduct, getTransactionHistory, deleteProduct, mockProducts, mockRatings, downloadLinks } from './lib/stacks';
 import ProductList from './components/ProductList';
 import ProductForm from './components/ProductForm';
@@ -18,9 +18,12 @@ const AppContent = () => {
   const [showSuccessPopup, setShowSuccessPopup] = useState(false);
   const [showPaymentPopup, setShowPaymentPopup] = useState(false);
   const [paymentStatus, setPaymentStatus] = useState(null);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
+  const [showRoleSelection, setShowRoleSelection] = useState(false);
+  const [sellerNotifications, setSellerNotifications] = useState({});
+  const [slideIndex, setSlideIndex] = useState(0); // State cho slider
+  const [searchQuery, setSearchQuery] = useState(''); // State cho ô tìm kiếm
   const location = useLocation();
+  const navigate = useNavigate();
 
   const handleConnectWallet = async () => {
     try {
@@ -29,12 +32,21 @@ const AppContent = () => {
         setUser({ stacksAddress: result.address });
         setError(null);
         setShowSuccessPopup(true);
-        setTimeout(() => setShowSuccessPopup(false), 3000);
+        setTimeout(() => {
+          setShowSuccessPopup(false);
+          setShowRoleSelection(true);
+        }, 3000);
       }
     } catch (error) {
       console.error('Wallet connection failed:', error);
       setError('Failed to connect wallet.');
     }
+  };
+
+  const selectRole = (selectedRole) => {
+    setRole(selectedRole);
+    localStorage.setItem('role', selectedRole);
+    setShowRoleSelection(false);
   };
 
   const fetchProducts = async () => {
@@ -64,6 +76,7 @@ const AppContent = () => {
 
   const handleListProduct = async (ipfsHash, price, name, description, image, quantity) => {
     try {
+      if (!user || !user.stacksAddress) throw new Error('User not authenticated');
       await listProduct(ipfsHash, price, user, name, description, image, quantity);
       await fetchProducts();
       await fetchTransactions();
@@ -76,6 +89,7 @@ const AppContent = () => {
 
   const handleBuyProduct = async (productId) => {
     try {
+      if (!user || !user.stacksAddress) throw new Error('User not authenticated');
       const result = await buyProduct(productId, user);
       if (result.success) {
         setPaymentStatus('success');
@@ -95,6 +109,7 @@ const AppContent = () => {
 
   const handleUnlistProduct = async (productId) => {
     try {
+      if (!user || !user.stacksAddress) throw new Error('User not authenticated');
       await unlistProduct(productId, user);
       await fetchProducts();
       await fetchTransactions();
@@ -107,6 +122,7 @@ const AppContent = () => {
 
   const handleUpdateProduct = async (productId, newIpfsHash, newPrice, newQuantity) => {
     try {
+      if (!user || !user.stacksAddress) throw new Error('User not authenticated');
       await updateProduct(productId, newIpfsHash, newPrice, user, newQuantity);
       await fetchProducts();
       await fetchTransactions();
@@ -119,6 +135,7 @@ const AppContent = () => {
 
   const handleRateProduct = async (productId, score) => {
     try {
+      if (!user || !user.stacksAddress) throw new Error('User not authenticated');
       await rateProduct(productId, score, user);
       await fetchProducts();
       await fetchTransactions();
@@ -131,6 +148,7 @@ const AppContent = () => {
 
   const handleDeleteProduct = async (productId) => {
     try {
+      if (!user || !user.stacksAddress) throw new Error('User not authenticated');
       await deleteProduct(productId, user);
       await fetchProducts();
       await fetchTransactions();
@@ -141,6 +159,21 @@ const AppContent = () => {
     }
   };
 
+  const handleRemoveProduct = (productId, sellerAddress) => {
+    const updatedProducts = products.filter(p => p.id !== productId);
+    setProducts(updatedProducts);
+    setSellerNotifications(prev => ({
+      ...prev,
+      [sellerAddress]: 'Your product has been removed by admin due to suspected scam activity.'
+    }));
+    setTimeout(() => {
+      setSellerNotifications(prev => {
+        const { [sellerAddress]: _, ...rest } = prev;
+        return rest;
+      });
+    }, 5000);
+  };
+
   useEffect(() => {
     if (user) {
       fetchProducts();
@@ -148,18 +181,32 @@ const AppContent = () => {
     }
   }, [user]);
 
-  const filteredProducts = products.filter(product =>
-    product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    product.description.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Quản lý slider
+  const nextSlide = () => setSlideIndex((prev) => (prev + 1) % 3);
+  const prevSlide = () => setSlideIndex((prev) => (prev - 1 + 3) % 3);
+  useEffect(() => {
+    const interval = setInterval(() => {
+      nextSlide();
+    }, 3000);
+    return () => clearInterval(interval);
+  }, []);
 
-  const productsPerPage = 25;
-  const indexOfLastProduct = currentPage * productsPerPage;
-  const indexOfFirstProduct = indexOfLastProduct - productsPerPage;
-  const currentProducts = filteredProducts.slice(indexOfFirstProduct, indexOfLastProduct);
-  const totalPages = Math.ceil(filteredProducts.length / productsPerPage);
+  // Sử dụng useMemo để tránh tái tạo suggestedProducts khi slideIndex thay đổi
+  const suggestedProducts = useMemo(() => {
+    return [...products].sort(() => 0.5 - Math.random()).slice(0, 4);
+  }, [products]);
 
-  const paginate = (pageNumber) => setCurrentPage(pageNumber);
+  const handleViewSuggestedProduct = (product) => {
+    setSelectedProduct(product);
+    navigate(`/product/${product.id}`);
+  };
+
+  // Lọc sản phẩm dựa trên searchQuery
+  const filteredProducts = useMemo(() => {
+    return products.filter(product =>
+      product.name.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }, [products, searchQuery]);
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-100">
@@ -167,12 +214,13 @@ const AppContent = () => {
       <header className="bg-gradient-to-r from-blue-600 to-blue-800 text-white p-4 shadow-lg">
         <div className="container mx-auto flex justify-between items-center max-w-7xl">
           <h1 className="text-3xl font-bold">Mini Marketplace</h1>
-          {user && (
-            <nav className="space-x-4">
-              <Link to="/" className="hover:text-gray-200">Home</Link>
-              {role === 'seller' && <Link to="/seller" className="hover:text-gray-200">Seller</Link>}
-              {role === 'admin' && <Link to="/admin" className="hover:text-gray-200">Admin</Link>}
-            </nav>
+          {!user && (
+            <button
+              onClick={handleConnectWallet}
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"
+            >
+              Connect Wallet
+            </button>
           )}
         </div>
       </header>
@@ -195,93 +243,121 @@ const AppContent = () => {
         {/* Main Content Area */}
         <main className="flex-1 p-6">
           {error && <p className="text-red-500 mb-4">{error}</p>}
-          {!user ? (
-            <div className="max-w-md mx-auto mt-12 p-8 bg-white rounded-xl shadow-2xl">
-              <h2 className="text-3xl font-semibold text-gray-800 mb-6 text-center">Select Your Role</h2>
-              <div className="space-y-4">
-                <button
-                  onClick={() => { setRole('buyer'); handleConnectWallet(); }}
-                  className="w-full bg-blue-600 text-white p-4 rounded-lg hover:bg-blue-700 transition transform hover:scale-105"
-                >
-                  Buyer
-                </button>
-                <button
-                  onClick={() => { setRole('seller'); handleConnectWallet(); }}
-                  className="w-full bg-green-600 text-white p-4 rounded-lg hover:bg-green-700 transition transform hover:scale-105"
-                >
-                  Seller
-                </button>
-                <button
-                  onClick={() => { setRole('admin'); handleConnectWallet(); }}
-                  className="w-full bg-purple-600 text-white p-4 rounded-lg hover:bg-purple-700 transition transform hover:scale-105"
-                >
-                  Admin
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div>
-              {/* <p className="text-gray-700 mb-4">Connected: {user.stacksAddress} (Role: {role})</p> */}
-              <input
-                type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Search products..."
-                className="w-full p-3 mb-4 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              {role === 'seller' && (
-                <>
-                  <ProductForm onListProduct={handleListProduct} userAddress={user.stacksAddress} />
-                  <SellerProductManagement
-                    products={products.filter(p => p.owner === user.stacksAddress)}
-                    onUnlistProduct={handleUnlistProduct}
-                    onUpdateProduct={handleUpdateProduct}
+          {location.pathname === '/' && (
+            <div className="min-h-screen flex flex-col items-center justify-center">
+              {user && (
+                <div className="w-full max-w-6xl mb-6">
+                  <input
+                    type="text"
+                    placeholder="Search products..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full p-2 border rounded-lg mb-4"
                   />
-                  <TransactionHistory transactions={transactions.filter(tx =>
-                    mockProducts.find(p => p.id === tx.productId)?.owner === user.stacksAddress
-                  )} />
-                </>
+                </div>
               )}
-              {location.pathname === '/' && role === 'buyer' && (
+              <h2 className="text-5xl font-bold text-gray-800 mb-12 text-center">Welcome to Market</h2>
+              {/* Slider Quảng Cáo */}
+              <div className="w-full max-w-6xl mb-6">
+                <div className="relative w-full overflow-hidden">
+                  <div className="flex transition-transform duration-500" style={{ transform: `translateX(-${slideIndex * 100}%)` }}>
+                    <img src="https://images.unsplash.com/photo-1600585154340-be6161a56a0c?fit=crop&w=800&h=300" alt="Ad 1" className="w-full h-48 object-cover flex-shrink-0" />
+                    <img src="https://images.unsplash.com/photo-1600585154340-be6161a56a0c?fit=crop&w=800&h=300" alt="Ad 2" className="w-full h-48 object-cover flex-shrink-0" />
+                    <img src="https://images.unsplash.com/photo-1600585154340-be6161a56a0c?fit=crop&w=800&h=300" alt="Ad 3" className="w-full h-48 object-cover flex-shrink-0" />
+                  </div>
+                  <button
+                    onClick={prevSlide}
+                    className="absolute left-0 top-1/2 transform -translate-y-1/2 bg-gray-800 text-white p-2 rounded-full hover:bg-gray-700"
+                  >
+                    &lt;
+                  </button>
+                  <button
+                    onClick={nextSlide}
+                    className="absolute right-0 top-1/2 transform -translate-y-1/2 bg-gray-800 text-white p-2 rounded-full hover:bg-gray-700"
+                  >
+                    &gt;
+                  </button>
+                </div>
+              </div>
+              {user && (
                 <>
-                  <ProductList
-                    products={currentProducts}
-                    userAddress={user.stacksAddress}
-                    onBuyProduct={handleBuyProduct}
-                    onUnlistProduct={handleUnlistProduct}
-                    onSelectProduct={setSelectedProduct}
-                    role={role}
-                    onDeleteProduct={handleDeleteProduct}
-                  />
-                  {totalPages > 1 && (
-                    <div className="mt-6 flex justify-center">
-                      {Array.from({ length: totalPages }, (_, i) => i + 1).map(number => (
-                        <button
-                          key={number}
-                          onClick={() => paginate(number)}
-                          className="mx-1 px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300 focus:outline-none"
-                        >
-                          {number}
-                        </button>
-                      ))}
+                  <h3 className="text-2xl font-semibold text-gray-700 mb-6">Hot Product</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 w-full max-w-6xl">
+                    {suggestedProducts.map((product) => (
+                      <div
+                        key={product.id}
+                        className="bg-white p-4 rounded-lg shadow-md hover:shadow-lg transition cursor-pointer"
+                        onClick={() => handleViewSuggestedProduct(product)}
+                      >
+                        <img src={product.image} alt={product.name} className="w-full h-40 object-cover rounded-lg mb-4" />
+                        <h4 className="text-lg font-semibold text-gray-800">{product.name}</h4>
+                        <p className="text-gray-600">Price: {product.price} microSTX</p>
+                      </div>
+                    ))}
+                  </div>
+                  {(role === 'buyer' || role === 'seller' || role === 'admin') && (
+                    <div className="mt-12 w-full max-w-6xl">
+                      <ProductList
+                        products={filteredProducts}
+                        userAddress={user?.stacksAddress}
+                        onBuyProduct={handleBuyProduct}
+                        onUnlistProduct={handleUnlistProduct}
+                        onSelectProduct={setSelectedProduct}
+                        role={role}
+                        onDeleteProduct={handleDeleteProduct}
+                        onRemoveProduct={handleRemoveProduct}
+                      />
                     </div>
                   )}
                 </>
               )}
-              <Routes>
-                <Route
-                  path="/product/:id"
-                  element={<ProductDetailPage
-                    product={selectedProduct}
-                    userAddress={user?.stacksAddress}
-                    onBuyProduct={handleBuyProduct}
-                    onRateProduct={handleRateProduct}
-                    role={role}
-                    downloadLink={downloadLinks[selectedProduct?.id]}
-                  />}
-                />
-                <Route path="/" element={<Navigate to="/" />} />
-              </Routes>
+            </div>
+          )}
+          {role === 'seller' && location.pathname === '/seller' && (
+            <>
+              <ProductForm onListProduct={handleListProduct} userAddress={user?.stacksAddress} />
+              <SellerProductManagement
+                products={products.filter(p => p.owner === user?.stacksAddress)}
+                onUnlistProduct={handleUnlistProduct}
+                onUpdateProduct={handleUpdateProduct}
+              />
+              <TransactionHistory transactions={transactions.filter(tx =>
+                mockProducts.find(p => p.id === tx.productId)?.owner === user?.stacksAddress
+              )} />
+            </>
+          )}
+          {role === 'admin' && location.pathname === '/admin' && (
+            <ProductList
+              products={products}
+              userAddress={user?.stacksAddress}
+              onBuyProduct={handleBuyProduct}
+              onUnlistProduct={handleUnlistProduct}
+              onSelectProduct={setSelectedProduct}
+              role={role}
+              onDeleteProduct={handleDeleteProduct}
+              onRemoveProduct={handleRemoveProduct}
+            />
+          )}
+          <Routes>
+            <Route
+              path="/product/:id"
+              element={<ProductDetailPage
+                product={selectedProduct}
+                userAddress={user?.stacksAddress}
+                onBuyProduct={handleBuyProduct}
+                onRateProduct={handleRateProduct}
+                role={role}
+                downloadLink={downloadLinks[selectedProduct?.id]}
+                transactions={transactions}
+              />}
+            />
+            <Route path="/seller" element={<Navigate to="/seller" />} />
+            <Route path="/admin" element={<Navigate to="/admin" />} />
+            <Route path="/" element={<Navigate to="/" />} />
+          </Routes>
+          {role === 'seller' && sellerNotifications[user?.stacksAddress] && (
+            <div className="fixed bottom-4 right-4 bg-red-500 text-white p-4 rounded-lg shadow-lg">
+              {sellerNotifications[user.stacksAddress]}
             </div>
           )}
           {showSuccessPopup && (
@@ -295,6 +371,39 @@ const AppContent = () => {
                 >
                   Close
                 </button>
+              </div>
+            </div>
+          )}
+          {showRoleSelection && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+              <div className="bg-white p-6 rounded-lg shadow-xl">
+                <h2 className="text-2xl font-semibold text-gray-800 mb-4 text-center">Select Your Role</h2>
+                <div className="space-y-4">
+                  <button
+                    onClick={() => selectRole('buyer')}
+                    className="w-full bg-blue-600 text-white p-4 rounded-lg hover:bg-blue-700 transition transform hover:scale-105"
+                  >
+                    Buyer
+                  </button>
+                  <button
+                    onClick={() => selectRole('seller')}
+                    className="w-full bg-green-600 text-white p-4 rounded-lg hover:bg-green-700 transition transform hover:scale-105"
+                  >
+                    Seller
+                  </button>
+                  <button
+                    onClick={() => selectRole('admin')}
+                    className="w-full bg-purple-600 text-white p-4 rounded-lg hover:bg-purple-700 transition transform hover:scale-105"
+                  >
+                    Admin
+                  </button>
+                  <button
+                    onClick={() => setShowRoleSelection(false)}
+                    className="w-full bg-gray-600 text-white p-4 rounded-lg hover:bg-gray-700 transition"
+                  >
+                    Cancel
+                  </button>
+                </div>
               </div>
             </div>
           )}

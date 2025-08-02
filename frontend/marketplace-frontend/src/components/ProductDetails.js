@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-function ProductDetails({ product, userAddress, onUpdateProduct, onRateProduct, role, downloadLink }) {
+function ProductDetails({ product, userAddress, onUpdateProduct, onRateProduct, role, downloadLink, transactions }) {
   const [newIpfsHash, setNewIpfsHash] = useState('');
   const [newPrice, setNewPrice] = useState('');
   const [newQuantity, setNewQuantity] = useState(product.quantity);
@@ -15,8 +15,15 @@ function ProductDetails({ product, userAddress, onUpdateProduct, onRateProduct, 
   };
 
   const handleRate = () => {
-    onRateProduct(product.id, parseInt(score));
-    setScore('');
+    if (onRateProduct) {
+      const hasBought = transactions.some(tx => tx.buyer === userAddress && tx.productId === product.id);
+      if (hasBought) {
+        onRateProduct(product.id, parseInt(score));
+        setScore('');
+      } else {
+        alert('You must purchase this product before rating.');
+      }
+    }
   };
 
   return (

@@ -1,7 +1,7 @@
 import React from 'react';
 import { useParams } from 'react-router-dom';
 
-function ProductDetailPage({ product, userAddress, onBuyProduct, onRateProduct, role, downloadLink }) {
+function ProductDetailPage({ product, userAddress, onBuyProduct, onRateProduct, role, downloadLink, transactions }) {
   const { id } = useParams();
 
   if (!product || product.id !== parseInt(id)) {
@@ -9,7 +9,14 @@ function ProductDetailPage({ product, userAddress, onBuyProduct, onRateProduct, 
   }
 
   const handleRate = (score) => {
-    if (onRateProduct) onRateProduct(product.id, score);
+    if (onRateProduct) {
+      const hasBought = transactions.some(tx => tx.buyer === userAddress && tx.productId === product.id);
+      if (hasBought) {
+        onRateProduct(product.id, score);
+      } else {
+        alert('You must purchase this product before rating.');
+      }
+    }
   };
 
   return (
