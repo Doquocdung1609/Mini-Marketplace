@@ -1,159 +1,171 @@
 import { openContractCall } from '@stacks/connect';
-import { STACKS_TESTNET } from '@stacks/network'; // Chỉ sử dụng STACKS_TESTNET
-import { 
-  uintCV, 
-  stringUtf8CV, 
-  cvToJSON,
-  fetchCallReadOnlyFunction, // Sử dụng fetchCallReadOnlyFunction
-} from '@stacks/transactions';
+import { STACKS_TESTNET } from '@stacks/network';
+import { uintCV, stringUtf8CV, cvToJSON } from '@stacks/transactions';
 import axios from 'axios';
 
-// Cấu hình mạng (sử dụng testnet)
-const network = STACKS_TESTNET; // Sử dụng trực tiếp STACKS_TESTNET
-const contractAddress = 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM'; // Thay bằng địa chỉ deployer
+// Mock data
+let mockProducts = [
+  { 
+    id: 1, 
+    name: "Digital Art #1", 
+    ipfsHash: "QmXoypizjW3WknFiJnKLwHCnL72vedxjQkDDP1mXWo6uco", 
+    price: 1000000, 
+    owner: "ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM", 
+    description: "A beautiful digital artwork", 
+    image: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?fit=crop&w=150&h=150", 
+    quantity: 10, 
+    sold: 2, 
+    revenue: 2000000 
+  },
+  { 
+    id: 2, 
+    name: "NFT Music Track", 
+    ipfsHash: "QmYoypizjW3WknFiJnKLwHCnL72vedxjQkDDP1mXWo6uco", 
+    price: 500000, 
+    owner: "ST2X1ABCDEF1234567890ZYXWVUTSRQPON", 
+    description: "High-quality music track", 
+    image: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?fit=crop&w=150&h=150",
+    quantity: 5, 
+    sold: 1, 
+    revenue: 500000 
+  },
+  { 
+    id: 3, 
+    name: "Virtual Item", 
+    ipfsHash: "QmZoypizjW3WknFiJnKLwHCnL72vedxjQkDDP1mXWo6uco", 
+    price: 750000, 
+    owner: "ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM", 
+    description: "Virtual game item", 
+    image: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?fit=crop&w=150&h=150",
+    quantity: 8, 
+    sold: 0, 
+    revenue: 0 
+  },
+    { 
+    id: 4, 
+    name: "NFT Music Track", 
+    ipfsHash: "QmYoypizjW3WknFiJnKLwHCnL72vedxjQkDDP1mXWo6uco", 
+    price: 500000, 
+    owner: "ST2X1ABCDEF1234567890ZYXWVUTSRQPON", 
+    description: "High-quality music track", 
+    image: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?fit=crop&w=150&h=150",
+    quantity: 5, 
+    sold: 1, 
+    revenue: 500000 
+  },
+  { 
+    id: 5, 
+    name: "Virtual Item", 
+    ipfsHash: "QmZoypizjW3WknFiJnKLwHCnL72vedxjQkDDP1mXWo6uco", 
+    price: 750000, 
+    owner: "ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM", 
+    description: "Virtual game item", 
+    image: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?fit=crop&w=150&h=150",
+    quantity: 8, 
+    sold: 0, 
+    revenue: 0 
+  },
+];
+
+const mockRatings = { 1: 4.5, 2: 3.8, 3: 4.2 };
+const mockTransactions = [
+  { id: 1, productId: 1, buyer: "ST2X1ABCDEF1234567890ZYXWVUTSRQPON", amount: 1000000, timestamp: "2025-07-31T10:00:00Z" },
+  { id: 2, productId: 2, buyer: "ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM", amount: 500000, timestamp: "2025-07-31T12:00:00Z" },
+];
+let downloadLinks = {};
+
+const network = STACKS_TESTNET;
+const contractAddress = 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM';
 const contractName = 'marketplace';
 const explorerApi = 'https://api.testnet.stacks.co/extended/v1';
-const pinataApiKey = 'c51d36141a1da34c7a91'; // Thay bằng API Key của bạn
-const pinataSecretApiKey = '6dc64c7882065fc575596d7476d4d7e7e73f4ac55214bcef18794dc7b72105e6'; // Thay bằng Secret API Key
+const pinataApiKey = 'c51d36141a1da34c7a91';
+const pinataSecretApiKey = '6dc64c7882065fc575596d7476d4d7e7e73f4ac55214bcef18794dc7b72105e6';
 
-// Hàm upload file lên IPFS qua Pinata
 export async function uploadToIPFS(file) {
-  const url = 'https://api.pinata.cloud/pinning/pinFileToIPFS';
-  const formData = new FormData();
-  formData.append('file', file);
-
-  try {
-    const response = await axios.post(url, formData, {
-      headers: {
-        'pinata_api_key': pinataApiKey,
-        'pinata_secret_api_key': pinataSecretApiKey,
-        'Content-Type': 'multipart/form-data',
-      },
-    });
-    return `ipfs://${response.data.IpfsHash}`;
-  } catch (error) {
-    console.error('IPFS upload failed:', error);
-    throw new Error('Failed to upload to IPFS');
-  }
+  return `ipfs://mockHash${Date.now()}`;
 }
 
-// Hàm kết nối Leather Wallet
 export async function connectWallet() {
-  return new Promise((resolve, reject) => {
-    openContractCall({
-      network,
-      contractAddress,
-      contractName,
-      functionName: 'get-product',
-      functionArgs: [uintCV(0)],
-      onFinish: (data) => resolve(data),
-      onCancel: () => reject(new Error('User cancelled wallet connection')),
-    });
+  return new Promise((resolve) => {
+    setTimeout(() => resolve({ success: true, address: 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM' }), 500);
   });
 }
 
-// Hàm gọi read-only function
 export async function callReadOnly(functionName, args, userAddress) {
-  try {
-    const result = await fetchCallReadOnlyFunction({
-      network,
-      contractAddress,
-      contractName,
-      functionName,
-      functionArgs: args,
-      senderAddress: userAddress,
-    });
-    return cvToJSON(result);
-  } catch (error) {
-    console.error(`Call read-only failed for ${functionName}:`, error);
-    throw error;
+  if (functionName === 'get-product') {
+    const productId = args[0].value;
+    return { value: mockProducts.find(p => p.id === productId) || null };
+  } else if (functionName === 'get-average-rating') {
+    const productId = args[0].value;
+    return { value: mockRatings[productId] || 0 };
   }
+  return { value: null };
 }
 
-// Hàm đăng sản phẩm
-export async function listProduct(ipfsHash, price, user) {
-  return new Promise((resolve, reject) => {
-    openContractCall({
-      network,
-      contractAddress,
-      contractName,
-      functionName: 'list-product',
-      functionArgs: [
-        stringUtf8CV(ipfsHash),
-        uintCV(price),
-      ],
-      onFinish: (data) => resolve(data),
-      onCancel: () => reject(new Error('Transaction cancelled')),
-      senderAddress: user.stacksAddress,
-    });
+export async function listProduct(ipfsHash, price, user, name, description, image, quantity) {
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      const newProduct = { id: mockProducts.length + 1, name, ipfsHash, price, owner: user.stacksAddress, description, image, quantity, sold: 0, revenue: 0 };
+      mockProducts.push(newProduct);
+      resolve({ success: true });
+    }, 500);
   });
 }
 
-// Các hàm khác (buyProduct, unlistProduct, updateProduct, rateProduct, getProduct, getOwner, getAverageRating, getTransactionHistory) giữ nguyên
 export async function buyProduct(productId, user) {
-  return new Promise((resolve, reject) => {
-    openContractCall({
-      network,
-      contractAddress,
-      contractName,
-      functionName: 'buy-product',
-      functionArgs: [uintCV(productId)],
-      onFinish: (data) => resolve(data),
-      onCancel: () => reject(new Error('Transaction cancelled')),
-      senderAddress: user.stacksAddress,
-    });
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      const product = mockProducts.find(p => p.id === productId && p.quantity > 0);
+      if (product) {
+        product.quantity -= 1;
+        product.sold += 1;
+        product.revenue += product.price;
+        mockTransactions.push({ id: mockTransactions.length + 1, productId, buyer: user.stacksAddress, amount: product.price, timestamp: new Date().toISOString() });
+        downloadLinks[productId] = `https://example.com/download/${productId}`;
+        resolve({ success: true, downloadLink: downloadLinks[productId] });
+      } else {
+        resolve({ success: false, error: "Out of stock or purchase failed" });
+      }
+    }, 500);
   });
 }
 
 export async function unlistProduct(productId, user) {
-  return new Promise((resolve, reject) => {
-    openContractCall({
-      network,
-      contractAddress,
-      contractName,
-      functionName: 'unlist-product',
-      functionArgs: [uintCV(productId)],
-      onFinish: (data) => resolve(data),
-      onCancel: () => reject(new Error('Transaction cancelled')),
-      senderAddress: user.stacksAddress,
-    });
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      const index = mockProducts.findIndex(p => p.id === productId && p.owner === user.stacksAddress);
+      if (index !== -1) {
+        mockProducts.splice(index, 1);
+        resolve({ success: true });
+      } else {
+        resolve({ success: false });
+      }
+    }, 500);
   });
 }
 
-export async function updateProduct(productId, newIpfsHash, newPrice, user) {
-  return new Promise((resolve, reject) => {
-    openContractCall({
-      network,
-      contractAddress,
-      contractName,
-      functionName: 'update-product',
-      functionArgs: [
-        uintCV(productId),
-        stringUtf8CV(newIpfsHash),
-        uintCV(newPrice),
-      ],
-      onFinish: (data) => resolve(data),
-      onCancel: () => reject(new Error('Transaction cancelled')),
-      senderAddress: user.stacksAddress,
-    });
+export async function updateProduct(productId, newIpfsHash, newPrice, user, newQuantity) {
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      const product = mockProducts.find(p => p.id === productId && p.owner === user.stacksAddress);
+      if (product) {
+        product.ipfsHash = newIpfsHash;
+        product.price = newPrice;
+        product.quantity = newQuantity;
+        resolve({ success: true });
+      } else {
+        resolve({ success: false });
+      }
+    }, 500);
   });
 }
 
 export async function rateProduct(productId, score, user) {
-  return new Promise((resolve, reject) => {
-    openContractCall({
-      network,
-      contractAddress,
-      contractName,
-      functionName: 'rate-product',
-      functionArgs: [
-        uintCV(productId),
-        uintCV(score),
-      ],
-      onFinish: (data) => resolve(data),
-      onCancel: () => reject(new Error('Transaction cancelled')),
-      senderAddress: user.stacksAddress,
-    });
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      mockRatings[productId] = score;
+      resolve({ success: true });
+    }, 500);
   });
 }
 
@@ -162,7 +174,8 @@ export async function getProduct(productId, userAddress) {
 }
 
 export async function getOwner(productId, userAddress) {
-  return callReadOnly('get-owner', [uintCV(productId)], userAddress);
+  const product = mockProducts.find(p => p.id === productId);
+  return { value: product ? product.owner : null };
 }
 
 export async function getAverageRating(productId, userAddress) {
@@ -170,14 +183,25 @@ export async function getAverageRating(productId, userAddress) {
 }
 
 export async function getTransactionHistory() {
-  try {
-    const response = await fetch(
-      `${explorerApi}/contract/${contractAddress}.${contractName}/events?limit=50`
-    );
-    const data = await response.json();
-    return data.events.filter(event => event.event_type === 'print_event');
-  } catch (error) {
-    console.error('Failed to fetch transaction history:', error);
-    return [];
-  }
+  return mockTransactions;
 }
+
+export async function deleteProduct(productId, user) {
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      if (user.stacksAddress === 'ST3ADMIN1234567890ZYXWVUTSRQPONMLKJ') {
+        const index = mockProducts.findIndex(p => p.id === productId);
+        if (index !== -1) {
+          mockProducts.splice(index, 1);
+          resolve({ success: true });
+        } else {
+          resolve({ success: false });
+        }
+      } else {
+        resolve({ success: false, error: "Only admin can delete" });
+      }
+    }, 500);
+  });
+}
+
+export { mockProducts, mockRatings, downloadLinks };

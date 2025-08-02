@@ -1,38 +1,43 @@
-.App {
-  text-align: center;
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Style cho header khi chưa đăng nhập */
+header .container {
+  @apply max-w-7xl mx-auto;
 }
 
-.App-logo {
-  height: 40vmin;
-  pointer-events: none;
+/* Style cho nút tùy chỉnh */
+.custom-button {
+  @apply px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition duration-300 ease-in-out;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .App-logo {
-    animation: App-logo-spin infinite 20s linear;
+/* Style cho sidebar */
+aside ul {
+  @apply list-none p-0;
+}
+
+aside li {
+  @apply py-2 border-b border-gray-300;
+}
+
+/* Style cho main content */
+main {
+  @apply max-w-7xl mx-auto;
+}
+
+/* Responsive design */
+@media (max-width: 640px) {
+  header .container {
+    @apply flex-col space-y-4;
   }
-}
-
-.App-header {
-  background-color: #282c34;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  font-size: calc(10px + 2vmin);
-  color: white;
-}
-
-.App-link {
-  color: #61dafb;
-}
-
-@keyframes App-logo-spin {
-  from {
-    transform: rotate(0deg);
+  aside {
+    @apply w-full;
   }
-  to {
-    transform: rotate(360deg);
+  main {
+    @apply p-2;
+  }
+  .max-w-md {
+    @apply w-full;
   }
 }
