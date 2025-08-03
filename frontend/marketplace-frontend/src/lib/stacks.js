@@ -1,22 +1,26 @@
-import { openContractCall, getUserData, authenticate } from '@stacks/connect';
-import { STACKS_TESTNET } from '@stacks/network'; // Sử dụng STACKS_TESTNET
+import { openContractCall, authenticate, AppConfig, UserSession, getUserData } from '@stacks/connect';
+import { STACKS_TESTNET } from '@stacks/network';
 import { uintCV, stringAsciiCV, fetchCallReadOnlyFunction, cvToJSON } from '@stacks/transactions';
 import axios from 'axios';
 
 // Network configuration
-const network = STACKS_TESTNET; // Sử dụng STACKS_TESTNET trực tiếp
+const network = STACKS_TESTNET;
 const contractAddress = 'ST33SSQ904GZKAJDKYN2GFX9JM5ZBGV3R889DCKY4';
 const contractName = 'tame-rose-bass';
 
 // Pinata API credentials for IPFS
-const pinataApiKey = process.env.REACT_APP_PINATA_API_KEY || 'dd0389c939f5ddf9d573';
-const pinataSecretApiKey = process.env.REACT_APP_PINATA_SECRET_API_KEY || 'ef7b7e4c691f17f6e39ea31a603a686aab55c882daaed2dbd950ffc6c89a53df';
+const pinataApiKey = process.env.REACT_APP_PINATA_API_KEY || 'dd9fb52d4047da189cd9';
+const pinataSecretApiKey = process.env.REACT_APP_PINATA_SECRET_API_KEY || '23c763c0d64a1d40c30630dab21ea1724cf03c730f8adc68cd0be24c08adca1a';
+
+// AppConfig for Leather
+const appConfig = new AppConfig(['store_write', 'publish_data'], 'http://localhost:3000');
+const userSession = new UserSession({ appConfig });
 
 // Check if wallet is already connected
 export async function checkWalletConnection() {
   try {
     const userData = await getUserData();
-    console.log('User data from getUserData:', userData); // Ghi log để kiểm tra
+    console.log('User data from getUserData:', userData);
     if (userData && userData.profile && userData.profile.stxAddress) {
       return { success: true, address: userData.profile.stxAddress.testnet };
     }
@@ -35,15 +39,11 @@ export async function connectWallet() {
         name: 'Mini Marketplace',
         icon: window.location.origin + '/logo.svg',
       },
-      network,
+      network: STACKS_TESTNET,
       onFinish: (data) => {
-        console.log('Authentication response (detailed):', JSON.stringify(data, null, 2)); // Ghi log chi tiết
-        let address;
-        if (data.authResponsePayload && data.authResponsePayload.profile && data.authResponsePayload.profile.stxAddress && data.authResponsePayload.profile.stxAddress.testnet) {
-          address = data.authResponsePayload.profile.stxAddress.testnet;
-        } else if (data.address) {
-          address = data.address; // Fallback cho địa chỉ trực tiếp
-        } else {
+        console.log('Authentication response (detailed):', JSON.stringify(data, null, 2));
+        let address = data.authResponsePayload?.profile?.stxAddress?.testnet;
+        if (!address) {
           reject(new Error('Invalid authentication response: No valid address found'));
           return;
         }
@@ -68,13 +68,18 @@ export async function uploadToIPFS(data) {
           'pinata_secret_api_key': pinataSecretApiKey,
         },
       });
-      return `https://gateway.pinata.cloud/ipfs/${response.data.IpfsHash}`;
+      console.log('Pinata response:', response.data);
+      if (response.data && response.data.IpfsHash) {
+        return response.data.IpfsHash;
+      } else {
+        throw new Error('Invalid response from Pinata');
+      }
     } catch (error) {
-      console.error('IPFS upload failed:', error);
+      console.error('IPFS upload failed:', error.response ? error.response.data : error.message);
       throw new Error('Failed to upload to IPFS');
     }
   }
-  return `ipfs://mockHash${Date.now()}`; // Fallback for non-file data
+  return `ipfs://mockHash${Date.now()}`;
 }
 
 // Call read-only contract functions
@@ -96,31 +101,44 @@ export async function callReadOnly(functionName, args, userAddress) {
 }
 
 // List a new product
-export async function listProduct(ipfsHash, price, user, name, description, image, quantity, category) {
-  let imageHash = image;
-  if (image instanceof File) {
-    imageHash = await uploadToIPFS(image);
-  }
+export async function listProduct(ipfsHash, price, quantity, category) {
   return new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      console.error('Transaction timed out after 120 seconds');
+      reject(new Error('Transaction timed out'));
+    }, 120000);
+
+    if (!userSession.isUserSignedIn()) {
+      reject(new Error('User not signed in. Please connect wallet.'));
+      return;
+    }
+
     openContractCall({
-      network,
+      userSession,
+      network: STACKS_TESTNET,
       contractAddress,
       contractName,
       functionName: 'list-product',
       functionArgs: [
-        uintCV(price),
-        stringAsciiCV(imageHash),
-        uintCV(quantity),
-        stringAsciiCV(category),
+        uintCV(Number(price) || 0),
+        stringAsciiCV(ipfsHash || ''),
+        uintCV(Number(quantity) || 0),
+        stringAsciiCV(category || ''),
       ],
       appDetails: {
         name: 'Mini Marketplace',
         icon: window.location.origin + '/logo.svg',
       },
       onFinish: (data) => {
+        clearTimeout(timeoutId);
+        console.log('Transaction finished:', data);
         resolve({ success: true, txId: data.txId });
       },
-      onCancel: () => reject(new Error('Transaction cancelled')),
+      onCancel: () => {
+        clearTimeout(timeoutId);
+        console.log('Transaction cancelled by user');
+        reject(new Error('Transaction cancelled by user'));
+      },
     });
   });
 }

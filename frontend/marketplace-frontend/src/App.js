@@ -32,56 +32,53 @@ const AppContent = () => {
   const adminChartInstance = useRef(null);
 
   const fetchProducts = useCallback(async () => {
-    try {
-      if (!user || !user.stacksAddress) throw new Error('User not authenticated');
-      const lastIdResult = await callReadOnly('get-last-id', [], user.stacksAddress);
-      const lastId = lastIdResult.value || 0;
-      console.log('Last ID:', lastId); // Debug: Kiểm tra lastId
+  try {
+    if (!user || !user.stacksAddress) throw new Error('User not authenticated');
+    const lastIdResult = await callReadOnly('get-last-id', [], user.stacksAddress);
+    const lastId = lastIdResult.value || 0;
 
-      const productPromises = [];
-      for (let id = 1; id <= lastId; id++) {
-        productPromises.push(
-          Promise.all([
-            getProduct(id, user.stacksAddress),
-            getAverageRating(id, user.stacksAddress),
-          ])
-        );
-      }
-
-      const productResults = await Promise.all(productPromises);
-      const productList = productResults
-        .map(([productResult, ratingResult], index) => {
-          const id = index + 1;
-          console.log('Product Result:', productResult); // Debug: Kiểm tra dữ liệu thô
-          if (productResult && productResult.value && productResult.value.value) {
-            const product = productResult.value.value; // Truy cập vào level lồng nhau
-            return {
-              id,
-              name: `Product #${id}`,
-              ipfsHash: product.ipfsHash?.value || product['ipfs-hash']?.value || null,
-              price: product.price?.value ? Number(product.price.value) : 0,
-              owner: product.seller?.value || product['seller']?.value || '',
-              description: `Description for product #${id}`,
-              image: product.ipfsHash?.value || product['ipfs-hash']?.value || null,
-              quantity: product.quantity?.value ? Number(product.quantity.value) : 0,
-              sold: product.isSold?.value === true ? 1 : 0,
-              revenue: product.revenue?.value ? Number(product.revenue.value) : 0,
-              category: product.category?.value || product['category']?.value || '',
-              avgRating: ratingResult.value ? Number(ratingResult.value) : 0,
-            };
-          }
-          return null;
-        })
-        .filter(p => p !== null);
-
-      console.log('Product List:', productList); // Debug: Kiểm tra danh sách sản phẩm sau ánh xạ
-      setProducts(productList);
-      setError(null);
-    } catch (error) {
-      console.error('Failed to fetch products:', error);
-      setError('Failed to load products. Please ensure wallet is connected and on Testnet.');
+    const productPromises = [];
+    for (let id = 1; id <= lastId; id++) {
+      productPromises.push(
+        Promise.all([
+          getProduct(id, user.stacksAddress),
+          getAverageRating(id, user.stacksAddress),
+        ])
+      );
     }
-  }, [user]);
+
+    const productResults = await Promise.all(productPromises);
+    const productList = productResults
+      .map(([productResult, ratingResult], index) => {
+        const id = index + 1;
+        if (productResult && productResult.value && productResult.value.value) {
+          const product = productResult.value.value;
+          return {
+            id,
+            name: `Product #${id}`,
+            ipfsHash: product.ipfsHash?.value || product['ipfs-hash']?.value || null,
+            price: product.price?.value ? Number(product.price.value) : 0,
+            owner: product.seller?.value || product['seller']?.value || '',
+            description: `Description for product #${id}`,
+            image: product.ipfsHash?.value || product['ipfs-hash']?.value ? `https://gateway.pinata.cloud/ipfs/${product.ipfsHash.value || product['ipfs-hash'].value}` : null,
+            quantity: product.quantity?.value ? Number(product.quantity.value) : 0,
+            sold: product.isSold?.value === true ? 1 : 0,
+            revenue: product.revenue?.value ? Number(product.revenue.value) : 0,
+            category: product.category?.value || product['category']?.value || '',
+            avgRating: ratingResult.value ? Number(ratingResult.value) : 0,
+          };
+        }
+        return null;
+      })
+      .filter(p => p !== null);
+
+    setProducts(productList);
+    setError(null);
+  } catch (error) {
+    console.error('Failed to fetch products:', error);
+    setError('Failed to load products. Please ensure wallet is connected and on Testnet.');
+  }
+}, [user]);
 
   const fetchTransactions = useCallback(async () => {
     try {
@@ -116,29 +113,29 @@ const AppContent = () => {
   }, []);
 
   const handleConnectWallet = async () => {
-    try {
-      const result = await connectWallet();
-      if (result.success) {
-        setUser({ stacksAddress: result.address });
-        setError(null);
-        setShowSuccessPopup(true);
-        setTimeout(() => {
-          setShowSuccessPopup(false);
-          if (!localStorage.getItem('role')) {
-            setShowRoleSelection(true);
-          } else {
-            fetchProducts();
-            fetchTransactions();
-          }
-        }, 3000);
-      }
-    } catch (error) {
-      console.error('Wallet connection failed:', error);
-      setError(error.message === 'Wallet connection cancelled by user' 
-        ? 'Wallet connection was cancelled. Please try again.' 
-        : 'Failed to connect wallet. Ensure the wallet is installed and on Testnet.');
+  try {
+    const result = await connectWallet();
+    if (result.success) {
+      setUser({ stacksAddress: result.address });
+      setError(null);
+      setShowSuccessPopup(true);
+      setTimeout(() => {
+        setShowSuccessPopup(false);
+        if (!localStorage.getItem('role')) {
+          setShowRoleSelection(true);
+        } else {
+          fetchProducts();
+          fetchTransactions();
+        }
+      }, 3000);
     }
-  };
+  } catch (error) {
+    console.error('Wallet connection failed:', error);
+    setError(error.message === 'Wallet connection cancelled by user'
+      ? 'Wallet connection was cancelled. Please try again.'
+      : 'Failed to connect wallet. Ensure the wallet is installed and on Testnet.');
+  }
+};
 
   const handleSignOut = () => {
     localStorage.removeItem('stacksAddress');
@@ -162,18 +159,18 @@ const AppContent = () => {
     fetchTransactions();
   };
 
-  const handleListProduct = async (ipfsHash, price, name, description, image, quantity, category) => {
-    try {
-      if (!user || !user.stacksAddress) throw new Error('User not authenticated');
-      await listProduct(ipfsHash, price, user, name, description, image, quantity, category);
-      await fetchProducts();
-      await fetchTransactions();
-      setError(null);
-    } catch (error) {
-      console.error('List product failed:', error);
-      setError('Failed to list product.');
-    }
-  };
+const handleListProduct = async (ipfsHash, price, quantity, category) => {
+  try {
+    if (!user || !user.stacksAddress) throw new Error('User not authenticated');
+    const result = await listProduct(ipfsHash, price, quantity, category);
+    await fetchProducts();
+    await fetchTransactions();
+    setError(null);
+  } catch (error) {
+    console.error('List product failed:', error);
+    setError(`Failed to list product: ${error.message}. Ensure wallet is connected and on Testnet.`);
+  }
+};
 
   const handleBuyProduct = async (productId) => {
     try {
