@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { BrowserRouter as Router, Route, Routes, Navigate, useLocation, Link, useNavigate } from 'react-router-dom';
-import { connectWallet, listProduct, buyProduct, unlistProduct, updateProduct, rateProduct, getTransactionHistory, deleteProduct, mockProducts, mockRatings, downloadLinks } from './lib/stacks';
+import { connectWallet, checkWalletConnection, listProduct, buyProduct, unlistProduct, updateProduct, rateProduct, getProduct, getAverageRating, getTransactionHistory, deleteProduct, callReadOnly } from './lib/stacks';
 import ProductList from './components/ProductList';
 import ProductForm from './components/ProductForm';
 import TransactionHistory from './components/TransactionHistory';
@@ -25,10 +25,91 @@ const AppContent = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [categories, setCategories] = useState(['Ebook', 'Photos', 'Templates', 'Music', 'Software']);
+  const [downloadLinks, setDownloadLinks] = useState({});
   const location = useLocation();
   const navigate = useNavigate();
   const adminChartRef = useRef(null);
   const adminChartInstance = useRef(null);
+
+  const fetchProducts = useCallback(async () => {
+    try {
+      if (!user || !user.stacksAddress) throw new Error('User not authenticated');
+      const lastIdResult = await callReadOnly('get-last-id', [], user.stacksAddress);
+      const lastId = lastIdResult.value || 0;
+      
+      const productPromises = [];
+      for (let id = 1; id <= lastId; id++) {
+        productPromises.push(
+          Promise.all([
+            getProduct(id, user.stacksAddress),
+            getAverageRating(id, user.stacksAddress),
+          ])
+        );
+      }
+
+      const productResults = await Promise.all(productPromises);
+      const productList = productResults
+        .map(([productResult, ratingResult], index) => {
+          if (productResult.value) {
+            const product = productResult.value;
+            return {
+              id: index + 1,
+              name: `Product #${index + 1}`,
+              ipfsHash: product.ipfsHash.value,
+              price: product.price.value,
+              owner: product.seller.value,
+              description: `Description for product #${index + 1}`,
+              image: product.ipfsHash.value,
+              quantity: product.quantity.value,
+              sold: product.isSold.value ? 1 : 0,
+              revenue: product.revenue.value,
+              category: product.category.value,
+              avgRating: ratingResult.value ? ratingResult.value : 0,
+            };
+          }
+          return null;
+        })
+        .filter(p => p !== null);
+
+      setProducts(productList);
+      setError(null);
+    } catch (error) {
+      console.error('Failed to fetch products:', error);
+      setError('Failed to load products. Please ensure wallet is connected and on Testnet.');
+    }
+  }, [user]);
+
+  const fetchTransactions = useCallback(async () => {
+    try {
+      const txs = await getTransactionHistory();
+      setTransactions(txs);
+      setError(null);
+    } catch (error) {
+      console.error('Failed to fetch transactions:', error);
+      setError('Failed to load transactions.');
+    }
+  }, []);
+
+  useEffect(() => {
+    const initializeWallet = async () => {
+      const storedAddress = localStorage.getItem('stacksAddress');
+      if (storedAddress) {
+        const connection = await checkWalletConnection();
+        if (connection.success) {
+          setUser({ stacksAddress: connection.address });
+          if (!localStorage.getItem('role')) {
+            setShowRoleSelection(true);
+          } else {
+            fetchProducts();
+            fetchTransactions();
+          }
+        } else {
+          localStorage.removeItem('stacksAddress');
+        }
+      }
+    };
+    initializeWallet();
+  }, []);
 
   const handleConnectWallet = async () => {
     try {
@@ -39,44 +120,45 @@ const AppContent = () => {
         setShowSuccessPopup(true);
         setTimeout(() => {
           setShowSuccessPopup(false);
-          setShowRoleSelection(true);
+          if (!localStorage.getItem('role')) {
+            setShowRoleSelection(true);
+          } else {
+            fetchProducts();
+            fetchTransactions();
+          }
         }, 3000);
       }
     } catch (error) {
       console.error('Wallet connection failed:', error);
-      setError('Failed to connect wallet.');
+      setError(error.message === 'Wallet connection cancelled by user' 
+        ? 'Wallet connection was cancelled. Please try again.' 
+        : 'Failed to connect wallet. Ensure the wallet is installed and on Testnet.');
     }
+  };
+
+  const handleSignOut = () => {
+    // Xóa thông tin đăng nhập khỏi localStorage
+    localStorage.removeItem('stacksAddress');
+    localStorage.removeItem('role');
+    // Đặt lại trạng thái
+    setUser(null);
+    setRole('');
+    setProducts([]);
+    setTransactions([]);
+    setError(null);
+    setSelectedProduct(null);
+    setDownloadLinks({});
+    setSellerNotifications({});
+    // Điều hướng về trang chủ
+    navigate('/');
   };
 
   const selectRole = (selectedRole) => {
     setRole(selectedRole);
     localStorage.setItem('role', selectedRole);
     setShowRoleSelection(false);
-  };
-
-  const fetchProducts = async () => {
-    try {
-      const productList = mockProducts.map(product => {
-        const avgRating = mockRatings[product.id] || 0;
-        return { id: product.id, ...product, avgRating };
-      });
-      setProducts(productList || []);
-      setError(null);
-    } catch (error) {
-      console.error('Failed to fetch products:', error);
-      setError('Failed to load products.');
-    }
-  };
-
-  const fetchTransactions = async () => {
-    try {
-      const txs = await getTransactionHistory();
-      setTransactions(txs);
-      setError(null);
-    } catch (error) {
-      console.error('Failed to fetch transactions:', error);
-      setError('Failed to load transactions.');
-    }
+    fetchProducts();
+    fetchTransactions();
   };
 
   const handleListProduct = async (ipfsHash, price, name, description, image, quantity, category) => {
@@ -99,6 +181,7 @@ const AppContent = () => {
       if (result.success) {
         setPaymentStatus('success');
         setShowPaymentPopup(true);
+        setDownloadLinks(prev => ({ ...prev, [productId]: result.downloadLink }));
         await fetchProducts();
         await fetchTransactions();
       } else {
@@ -128,7 +211,7 @@ const AppContent = () => {
   const handleUpdateProduct = async (productId, newIpfsHash, newPrice, newQuantity, newCategory) => {
     try {
       if (!user || !user.stacksAddress) throw new Error('User not authenticated');
-      await updateProduct(productId, newIpfsHash, newPrice, user, newQuantity, newCategory);
+      await updateProduct(productId, newIpfsHash, newPrice, user, newQuantity, newCategory || 'Ebook');
       await fetchProducts();
       await fetchTransactions();
       setError(null);
@@ -164,19 +247,23 @@ const AppContent = () => {
     }
   };
 
-  const handleRemoveProduct = (productId, sellerAddress) => {
-    const updatedProducts = products.filter(p => p.id !== productId);
-    setProducts(updatedProducts);
-    setSellerNotifications(prev => ({
-      ...prev,
-      [sellerAddress]: 'Your product has been removed by admin due to suspected scam activity.'
-    }));
-    setTimeout(() => {
-      setSellerNotifications(prev => {
-        const { [sellerAddress]: _, ...rest } = prev;
-        return rest;
-      });
-    }, 5000);
+  const handleRemoveProduct = async (productId, sellerAddress) => {
+    try {
+      await handleDeleteProduct(productId);
+      setSellerNotifications(prev => ({
+        ...prev,
+        [sellerAddress]: 'Your product has been removed by admin due to suspected scam activity.',
+      }));
+      setTimeout(() => {
+        setSellerNotifications(prev => {
+          const { [sellerAddress]: _, ...rest } = prev;
+          return rest;
+        });
+      }, 5000);
+    } catch (error) {
+      console.error('Remove product failed:', error);
+      setError('Failed to remove product.');
+    }
   };
 
   const addCategory = (newCategory) => {
@@ -193,11 +280,11 @@ const AppContent = () => {
   };
 
   useEffect(() => {
-    if (user) {
+    if (user && role) {
       fetchProducts();
       fetchTransactions();
     }
-  }, [user]);
+  }, [user, role, fetchProducts, fetchTransactions]);
 
   const nextSlide = () => setSlideIndex((prev) => (prev + 1) % 3);
   const prevSlide = () => setSlideIndex((prev) => (prev - 1 + 3) % 3);
@@ -229,35 +316,6 @@ const AppContent = () => {
     );
   }, [products, searchQuery, selectedCategory]);
 
-  const renderAdminChart = () => {
-    if (adminChartInstance.current) {
-      adminChartInstance.current.destroy();
-    }
-    const ctx = adminChartRef.current?.getContext('2d');
-    if (ctx) {
-      adminChartInstance.current = new Chart(ctx, {
-        type: 'bar',
-        data: {
-          labels: Object.keys(categoryCounts),
-          datasets: [{
-            label: 'Number of Products',
-            data: Object.values(categoryCounts),
-            backgroundColor: 'rgba(75, 192, 192, 0.2)',
-            borderColor: 'rgba(75, 192, 192, 1)',
-            borderWidth: 1
-          }]
-        },
-        options: {
-          scales: { y: { beginAtZero: true } },
-          plugins: {
-            legend: { position: 'top' },
-            title: { display: true, text: 'Products by Category' }
-          }
-        }
-      });
-    }
-  };
-
   const categoryCounts = useMemo(() => {
     return products.reduce((acc, product) => {
       acc[product.category] = (acc[product.category] || 0) + 1;
@@ -265,24 +323,65 @@ const AppContent = () => {
     }, {});
   }, [products]);
 
+  useEffect(() => {
+    if (role === 'admin' && location.pathname === '/admin') {
+      if (adminChartInstance.current) {
+        adminChartInstance.current.destroy();
+      }
+      const ctx = adminChartRef.current?.getContext('2d');
+      if (ctx) {
+        adminChartInstance.current = new Chart(ctx, {
+          type: 'bar',
+          data: {
+            labels: Object.keys(categoryCounts),
+            datasets: [{
+              label: 'Number of Products',
+              data: Object.values(categoryCounts),
+              backgroundColor: 'rgba(75, 192, 192, 0.2)',
+              borderColor: 'rgba(75, 192, 192, 1)',
+              borderWidth: 1
+            }]
+          },
+          options: {
+            scales: { y: { beginAtZero: true } },
+            plugins: {
+              legend: { position: 'top' },
+              title: { display: true, text: 'Products by Category' }
+            }
+          }
+        });
+      }
+    }
+  }, [categoryCounts, location.pathname, role]);
+
   return (
     <div className="min-h-screen flex flex-col bg-gray-100">
       <header className="bg-gradient-to-r from-blue-600 to-blue-800 text-white p-4 shadow-lg">
         <div className="container mx-auto flex justify-between items-center max-w-7xl">
           <h1 className="text-3xl font-bold">Mini Marketplace</h1>
-          {!user && (
-            <button
-              onClick={handleConnectWallet}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"
-            >
-              Connect Wallet
-            </button>
-          )}
+          <div>
+            {!user && (
+              <button
+                onClick={handleConnectWallet}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition mr-2"
+              >
+                Connect Wallet
+              </button>
+            )}
+            {user && (
+              <button
+                onClick={handleSignOut}
+                className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition"
+              >
+                Sign Out
+              </button>
+            )}
+          </div>
         </div>
       </header>
 
       <div className="flex flex-1">
-        {user && (
+        {user && role && (
           <aside className="w-64 bg-white p-6 shadow-lg flex flex-col min-h-[calc(100vh-128px)]">
             <nav className="flex-1">
               <ul className="space-y-4">
@@ -298,51 +397,49 @@ const AppContent = () => {
           {error && <p className="text-red-500 mb-4">{error}</p>}
           {location.pathname === '/' && (
             <div className="min-h-screen flex flex-col items-center justify-center">
-              {user && (
-                <div className="w-full max-w-6xl mb-6 flex space-x-4">
-                  <input
-                    type="text"
-                    placeholder="Search products..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-3/4 p-2 border rounded-lg"
-                  />
-                  <select
-                    value={selectedCategory}
-                    onChange={(e) => setSelectedCategory(e.target.value)}
-                    className="w-1/4 p-2 border rounded-lg"
-                  >
-                    <option value="All">All Categories</option>
-                    {categories.map((cat) => (
-                      <option key={cat} value={cat}>{cat}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-              <h2 className="text-5xl font-bold text-gray-800 mb-12 text-center">Welcome to Market</h2>
-              <div className="w-full max-w-6xl mb-6">
-                <div className="relative w-full overflow-hidden">
-                  <div className="flex transition-transform duration-500" style={{ transform: `translateX(-${slideIndex * 100}%)` }}>
-                    <img src="https://images.unsplash.com/photo-1600585154340-be6161a56a0c?fit=crop&w=800&h=300" alt="Ad 1" className="w-full h-48 object-cover flex-shrink-0" />
-                    <img src="https://images.unsplash.com/photo-1600585154340-be6161a56a0c?fit=crop&w=800&h=300" alt="Ad 2" className="w-full h-48 object-cover flex-shrink-0" />
-                    <img src="https://images.unsplash.com/photo-1600585154340-be6161a56a0c?fit=crop&w=800&h=300" alt="Ad 3" className="w-full h-48 object-cover flex-shrink-0" />
-                  </div>
-                  <button
-                    onClick={prevSlide}
-                    className="absolute left-0 top-1/2 transform -translate-y-1/2 bg-gray-800 text-white p-2 rounded-full hover:bg-gray-700"
-                  >
-                    &lt;
-                  </button>
-                  <button
-                    onClick={nextSlide}
-                    className="absolute right-0 top-1/2 transform -translate-y-1/2 bg-gray-800 text-white p-2 rounded-full hover:bg-gray-700"
-                  >
-                    &gt;
-                  </button>
-                </div>
-              </div>
-              {user && (
+              {user && role ? (
                 <>
+                  <div className="w-full max-w-6xl mb-6 flex space-x-4">
+                    <input
+                      type="text"
+                      placeholder="Search products..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-3/4 p-2 border rounded-lg"
+                    />
+                    <select
+                      value={selectedCategory}
+                      onChange={(e) => setSelectedCategory(e.target.value)}
+                      className="w-1/4 p-2 border rounded-lg"
+                    >
+                      <option value="All">All Categories</option>
+                      {categories.map((cat) => (
+                        <option key={cat} value={cat}>{cat}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <h2 className="text-5xl font-bold text-gray-800 mb-12 text-center">Welcome to Market</h2>
+                  <div className="w-full max-w-6xl mb-6">
+                    <div className="relative w-full overflow-hidden">
+                      <div className="flex transition-transform duration-500" style={{ transform: `translateX(-${slideIndex * 100}%)` }}>
+                        <img src="https://images.unsplash.com/photo-1600585154340-be6161a56a0c?fit=crop&w=800&h=300" alt="Ad 1" className="w-full h-48 object-cover flex-shrink-0" />
+                        <img src="https://images.unsplash.com/photo-1600585154340-be6161a56a0c?fit=crop&w=800&h=300" alt="Ad 2" className="w-full h-48 object-cover flex-shrink-0" />
+                        <img src="https://images.unsplash.com/photo-1600585154340-be6161a56a0c?fit=crop&w=800&h=300" alt="Ad 3" className="w-full h-48 object-cover flex-shrink-0" />
+                      </div>
+                      <button
+                        onClick={prevSlide}
+                        className="absolute left-0 top-1/2 transform -translate-y-1/2 bg-gray-800 text-white p-2 rounded-full hover:bg-gray-700"
+                      >
+                        &lt;
+                      </button>
+                      <button
+                        onClick={nextSlide}
+                        className="absolute right-0 top-1/2 transform -translate-y-1/2 bg-gray-800 text-white p-2 rounded-full hover:bg-gray-700"
+                      >
+                        &gt;
+                      </button>
+                    </div>
+                  </div>
                   <h3 className="text-2xl font-semibold text-gray-700 mb-6">Hot Product</h3>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 w-full max-w-6xl">
                     {suggestedProducts.map((product) => (
@@ -372,6 +469,16 @@ const AppContent = () => {
                     </div>
                   )}
                 </>
+              ) : (
+                <div className="text-center">
+                  <p className="text-gray-600 mb-4">Please connect your wallet to access the marketplace.</p>
+                  <button
+                    onClick={handleConnectWallet}
+                    className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"
+                  >
+                    Connect Wallet
+                  </button>
+                </div>
               )}
             </div>
           )}
@@ -385,7 +492,7 @@ const AppContent = () => {
                 transactions={transactions}
               />
               <TransactionHistory transactions={transactions.filter(tx =>
-                mockProducts.find(p => p.id === tx.productId)?.owner === user?.stacksAddress
+                products.find(p => p.id === tx.productId)?.owner === user?.stacksAddress
               )} />
             </div>
           )}
@@ -423,12 +530,6 @@ const AppContent = () => {
               />
               <div className="mt-6">
                 <canvas ref={adminChartRef} style={{ maxWidth: '100%', height: 'auto' }}></canvas>
-                <button
-                  onClick={renderAdminChart}
-                  className="mt-4 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
-                >
-                  Show Category Stats
-                </button>
               </div>
             </div>
           )}
@@ -445,8 +546,8 @@ const AppContent = () => {
                 transactions={transactions}
               />}
             />
-            <Route path="/seller" element={<Navigate to="/seller" />} />
-            <Route path="/admin" element={<Navigate to="/admin" />} />
+            <Route path="/seller" element={role === 'seller' ? <Navigate to="/seller" /> : <Navigate to="/" />} />
+            <Route path="/admin" element={role === 'admin' ? <Navigate to="/admin" /> : <Navigate to="/" />} />
             <Route path="/" element={<Navigate to="/" />} />
           </Routes>
           {role === 'seller' && sellerNotifications[user?.stacksAddress] && (

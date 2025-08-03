@@ -1,231 +1,269 @@
-import { openContractCall } from '@stacks/connect';
-import { STACKS_TESTNET } from '@stacks/network';
-import { uintCV, stringUtf8CV, cvToJSON } from '@stacks/transactions';
+import { openContractCall, getUserData, authenticate } from '@stacks/connect';
+import { STACKS_TESTNET } from '@stacks/network'; // Sử dụng STACKS_TESTNET
+import { uintCV, stringAsciiCV, fetchCallReadOnlyFunction, cvToJSON } from '@stacks/transactions';
 import axios from 'axios';
 
-// Mock data
-let mockProducts = [
-  { 
-    id: 1, 
-    name: "Digital Art #1", 
-    ipfsHash: "QmXoypizjW3WknFiJnKLwHCnL72vedxjQkDDP1mXWo6uco", 
-    price: 1000000, 
-    owner: "ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM", 
-    description: "A beautiful digital artwork", 
-    image: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?fit=crop&w=150&h=150", 
-    quantity: 10, 
-    sold: 2, 
-    revenue: 2000000, 
-    category: "Ebook"
-  },
-  { 
-    id: 2, 
-    name: "NFT Music Track", 
-    ipfsHash: "QmYoypizjW3WknFiJnKLwHCnL72vedxjQkDDP1mXWo6uco", 
-    price: 500000, 
-    owner: "ST2X1ABCDEF1234567890ZYXWVUTSRQPON", 
-    description: "High-quality music track", 
-    image: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?fit=crop&w=150&h=150",
-    quantity: 5, 
-    sold: 1, 
-    revenue: 500000,
-    category: "Photos"
-  },
-  { 
-    id: 3, 
-    name: "Virtual Item", 
-    ipfsHash: "QmZoypizjW3WknFiJnKLwHCnL72vedxjQkDDP1mXWo6uco", 
-    price: 750000, 
-    owner: "ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM", 
-    description: "Virtual game item", 
-    image: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?fit=crop&w=150&h=150",
-    quantity: 8, 
-    sold: 0, 
-    revenue: 0,
-    category: "Templates" 
-  },
-  { 
-    id: 4, 
-    name: "NFT Music Track", 
-    ipfsHash: "QmYoypizjW3WknFiJnKLwHCnL72vedxjQkDDP1mXWo6uco", 
-    price: 500000, 
-    owner: "ST2X1ABCDEF1234567890ZYXWVUTSRQPON", 
-    description: "High-quality music track", 
-    image: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?fit=crop&w=150&h=150",
-    quantity: 5, 
-    sold: 1, 
-    revenue: 500000,
-    category: "Templates" 
-  },
-  { 
-    id: 5, 
-    name: "Virtual Item", 
-    ipfsHash: "QmZoypizjW3WknFiJnKLwHCnL72vedxjQkDDP1mXWo6uco", 
-    price: 750000, 
-    owner: "ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM", 
-    description: "Virtual game item", 
-    image: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?fit=crop&w=150&h=150",
-    quantity: 8, 
-    sold: 0, 
-    revenue: 0,
-    category: "Templates"
-  },
-];
+// Network configuration
+const network = STACKS_TESTNET; // Sử dụng STACKS_TESTNET trực tiếp
+const contractAddress = 'ST33SSQ904GZKAJDKYN2GFX9JM5ZBGV3R889DCKY4';
+const contractName = 'tame-rose-bass';
 
-const mockRatings = { 1: 4.5, 2: 3.8, 3: 4.2 };
-const mockTransactions = [
-  { id: 1, productId: 1, buyer: "ST2X1ABCDEF1234567890ZYXWVUTSRQPON", amount: 1000000, timestamp: "2025-07-31T10:00:00Z" },
-  { id: 2, productId: 2, buyer: "ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM", amount: 500000, timestamp: "2025-07-31T12:00:00Z" },
-];
-let downloadLinks = {};
+// Pinata API credentials for IPFS
+const pinataApiKey = process.env.REACT_APP_PINATA_API_KEY || 'dd0389c939f5ddf9d573';
+const pinataSecretApiKey = process.env.REACT_APP_PINATA_SECRET_API_KEY || 'ef7b7e4c691f17f6e39ea31a603a686aab55c882daaed2dbd950ffc6c89a53df';
 
-const network = STACKS_TESTNET;
-const contractAddress = 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM';
-const contractName = 'marketplace';
-const explorerApi = 'https://api.testnet.stacks.co/extended/v1';
-const pinataApiKey = 'c51d36141a1da34c7a91';
-const pinataSecretApiKey = '6dc64c7882065fc575596d7476d4d7e7e73f4ac55214bcef18794dc7b72105e6';
+// Check if wallet is already connected
+export async function checkWalletConnection() {
+  try {
+    const userData = await getUserData();
+    console.log('User data from getUserData:', userData); // Ghi log để kiểm tra
+    if (userData && userData.profile && userData.profile.stxAddress) {
+      return { success: true, address: userData.profile.stxAddress.testnet };
+    }
+    return { success: false };
+  } catch (error) {
+    console.error('Error checking wallet connection:', error);
+    return { success: false };
+  }
+}
 
+// Connect wallet
+export async function connectWallet() {
+  return new Promise((resolve, reject) => {
+    authenticate({
+      appDetails: {
+        name: 'Mini Marketplace',
+        icon: window.location.origin + '/logo.svg',
+      },
+      network,
+      onFinish: (data) => {
+        console.log('Authentication response (detailed):', JSON.stringify(data, null, 2)); // Ghi log chi tiết
+        let address;
+        if (data.authResponsePayload && data.authResponsePayload.profile && data.authResponsePayload.profile.stxAddress && data.authResponsePayload.profile.stxAddress.testnet) {
+          address = data.authResponsePayload.profile.stxAddress.testnet;
+        } else if (data.address) {
+          address = data.address; // Fallback cho địa chỉ trực tiếp
+        } else {
+          reject(new Error('Invalid authentication response: No valid address found'));
+          return;
+        }
+        localStorage.setItem('stacksAddress', address);
+        resolve({ success: true, address });
+      },
+      onCancel: () => reject(new Error('Wallet connection cancelled by user')),
+    });
+  });
+}
+
+// Upload file to IPFS via Pinata
 export async function uploadToIPFS(data) {
   if (data instanceof File) {
     const formData = new FormData();
-    formData.append('image', data);
-    const url = `https://api.pinata.cloud/pinning/pinFileToIPFS`;
-    const response = await axios.post(url, formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-        'pinata_api_key': pinataApiKey,
-        'pinata_secret_api_key': pinataSecretApiKey
-      }
-    });
-    return `https://gateway.pinata.cloud/ipfs/${response.data.IpfsHash}`;
-  } else {
-    return `ipfs://mockHash${Date.now()}`; // Giả lập cho string
+    formData.append('file', data);
+    try {
+      const response = await axios.post('https://api.pinata.cloud/pinning/pinFileToIPFS', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+          'pinata_api_key': pinataApiKey,
+          'pinata_secret_api_key': pinataSecretApiKey,
+        },
+      });
+      return `https://gateway.pinata.cloud/ipfs/${response.data.IpfsHash}`;
+    } catch (error) {
+      console.error('IPFS upload failed:', error);
+      throw new Error('Failed to upload to IPFS');
+    }
   }
+  return `ipfs://mockHash${Date.now()}`; // Fallback for non-file data
 }
 
-export async function connectWallet() {
-  return new Promise((resolve) => {
-    setTimeout(() => resolve({ success: true, address: 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM' }), 500);
-  });
-}
-
+// Call read-only contract functions
 export async function callReadOnly(functionName, args, userAddress) {
-  if (functionName === 'get-product') {
-    const productId = args[0].value;
-    return { value: mockProducts.find(p => p.id === productId) || null };
-  } else if (functionName === 'get-average-rating') {
-    const productId = args[0].value;
-    return { value: mockRatings[productId] || 0 };
+  try {
+    const result = await fetchCallReadOnlyFunction({
+      network,
+      contractAddress,
+      contractName,
+      functionName,
+      functionArgs: args,
+      senderAddress: userAddress,
+    });
+    return cvToJSON(result);
+  } catch (error) {
+    console.error(`Error calling ${functionName}:`, error);
+    throw error;
   }
-  return { value: null };
 }
 
+// List a new product
 export async function listProduct(ipfsHash, price, user, name, description, image, quantity, category) {
-  return new Promise((resolve) => {
-    setTimeout(async () => {
-      let imageHash = image;
-      if (image instanceof File) {
-        imageHash = await uploadToIPFS(image);
-      }
-      const newProduct = { id: mockProducts.length + 1, name, ipfsHash, price, owner: user.stacksAddress, description, image: imageHash, quantity, sold: 0, revenue: 0, category };
-      mockProducts.push(newProduct);
-      resolve({ success: true });
-    }, 500);
+  let imageHash = image;
+  if (image instanceof File) {
+    imageHash = await uploadToIPFS(image);
+  }
+  return new Promise((resolve, reject) => {
+    openContractCall({
+      network,
+      contractAddress,
+      contractName,
+      functionName: 'list-product',
+      functionArgs: [
+        uintCV(price),
+        stringAsciiCV(imageHash),
+        uintCV(quantity),
+        stringAsciiCV(category),
+      ],
+      appDetails: {
+        name: 'Mini Marketplace',
+        icon: window.location.origin + '/logo.svg',
+      },
+      onFinish: (data) => {
+        resolve({ success: true, txId: data.txId });
+      },
+      onCancel: () => reject(new Error('Transaction cancelled')),
+    });
   });
 }
 
+// Buy a product
 export async function buyProduct(productId, user) {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      const product = mockProducts.find(p => p.id === productId && p.quantity > 0);
-      if (product) {
-        product.quantity -= 1;
-        product.sold += 1;
-        product.revenue += product.price;
-        mockTransactions.push({ id: mockTransactions.length + 1, productId, buyer: user.stacksAddress, amount: product.price, timestamp: new Date().toISOString() });
-        downloadLinks[productId] = `https://example.com/download/${productId}`;
-        resolve({ success: true, downloadLink: downloadLinks[productId] });
-      } else {
-        resolve({ success: false, error: "Out of stock or purchase failed" });
-      }
-    }, 500);
+  return new Promise((resolve, reject) => {
+    openContractCall({
+      network,
+      contractAddress,
+      contractName,
+      functionName: 'buy-product',
+      functionArgs: [uintCV(productId)],
+      appDetails: {
+        name: 'Mini Marketplace',
+        icon: window.location.origin + '/logo.svg',
+      },
+      onFinish: async (data) => {
+        const downloadLink = `https://gateway.pinata.cloud/ipfs/mockDownload${productId}`;
+        resolve({ success: true, txId: data.txId, downloadLink });
+      },
+      onCancel: () => reject(new Error('Transaction cancelled')),
+    });
   });
 }
 
+// Unlist a product
 export async function unlistProduct(productId, user) {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      const index = mockProducts.findIndex(p => p.id === productId && p.owner === user.stacksAddress);
-      if (index !== -1) {
-        mockProducts.splice(index, 1);
-        resolve({ success: true });
-      } else {
-        resolve({ success: false });
-      }
-    }, 500);
+  return new Promise((resolve, reject) => {
+    openContractCall({
+      network,
+      contractAddress,
+      contractName,
+      functionName: 'unlist-product',
+      functionArgs: [uintCV(productId)],
+      appDetails: {
+        name: 'Mini Marketplace',
+        icon: window.location.origin + '/logo.svg',
+      },
+      onFinish: (data) => {
+        resolve({ success: true, txId: data.txId });
+      },
+      onCancel: () => reject(new Error('Transaction cancelled')),
+    });
   });
 }
 
-export async function updateProduct(productId, newIpfsHash, newPrice, user, newQuantity, newCategory) {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      const product = mockProducts.find(p => p.id === productId && p.owner === user.stacksAddress);
-      if (product) {
-        product.ipfsHash = newIpfsHash;
-        product.price = newPrice;
-        product.quantity = newQuantity;
-        product.category = newCategory;
-        resolve({ success: true });
-      } else {
-        resolve({ success: false });
-      }
-    }, 500);
+// Update a product
+export async function updateProduct(productId, newIpfsHash, newPrice, user, newQuantity) {
+  return new Promise((resolve, reject) => {
+    openContractCall({
+      network,
+      contractAddress,
+      contractName,
+      functionName: 'update-product',
+      functionArgs: [
+        uintCV(productId),
+        uintCV(newPrice),
+        stringAsciiCV(newIpfsHash),
+        uintCV(newQuantity),
+      ],
+      appDetails: {
+        name: 'Mini Marketplace',
+        icon: window.location.origin + '/logo.svg',
+      },
+      onFinish: (data) => {
+        resolve({ success: true, txId: data.txId });
+      },
+      onCancel: () => reject(new Error('Transaction cancelled')),
+    });
   });
 }
 
+// Rate a product
 export async function rateProduct(productId, score, user) {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      mockRatings[productId] = score;
-      resolve({ success: true });
-    }, 500);
+  return new Promise((resolve, reject) => {
+    openContractCall({
+      network,
+      contractAddress,
+      contractName,
+      functionName: 'rate-product',
+      functionArgs: [uintCV(productId), uintCV(score)],
+      appDetails: {
+        name: 'Mini Marketplace',
+        icon: window.location.origin + '/logo.svg',
+      },
+      onFinish: (data) => {
+        resolve({ success: true, txId: data.txId });
+      },
+      onCancel: () => reject(new Error('Transaction cancelled')),
+    });
   });
 }
 
+// Get product details
 export async function getProduct(productId, userAddress) {
   return callReadOnly('get-product', [uintCV(productId)], userAddress);
 }
 
+// Get product owner
 export async function getOwner(productId, userAddress) {
-  const product = mockProducts.find(p => p.id === productId);
-  return { value: product ? product.owner : null };
+  return callReadOnly('get-owner', [uintCV(productId)], userAddress);
 }
 
+// Get average rating
 export async function getAverageRating(productId, userAddress) {
   return callReadOnly('get-average-rating', [uintCV(productId)], userAddress);
 }
 
+// Get transaction history
 export async function getTransactionHistory() {
-  return mockTransactions;
+  try {
+    const response = await axios.get(`https://api.testnet.hiro.so/extended/v1/address/${contractAddress}.${contractName}/transactions`);
+    return response.data.results.map(tx => ({
+      id: tx.tx_id,
+      productId: tx.contract_call?.function_args?.[0]?.value || 0,
+      buyer: tx.sender_address,
+      amount: tx.fee_rate || 0,
+      timestamp: new Date(tx.burn_block_time_iso).toISOString(),
+    }));
+  } catch (error) {
+    console.error('Failed to fetch transaction history:', error);
+    return [];
+  }
 }
 
+// Delete product (admin only)
 export async function deleteProduct(productId, user) {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      if (user.stacksAddress === 'ST3ADMIN1234567890ZYXWVUTSRQPONMLKJ') {
-        const index = mockProducts.findIndex(p => p.id === productId);
-        if (index !== -1) {
-          mockProducts.splice(index, 1);
-          resolve({ success: true });
-        } else {
-          resolve({ success: false });
-        }
-      } else {
-        resolve({ success: false, error: "Only admin can delete" });
-      }
-    }, 500);
+  return new Promise((resolve, reject) => {
+    openContractCall({
+      network,
+      contractAddress,
+      contractName,
+      functionName: 'delete-product',
+      functionArgs: [uintCV(productId)],
+      appDetails: {
+        name: 'Mini Marketplace',
+        icon: window.location.origin + '/logo.svg',
+      },
+      onFinish: (data) => {
+        resolve({ success: true, txId: data.txId });
+      },
+      onCancel: () => reject(new Error('Transaction cancelled')),
+    });
   });
 }
-
-export { mockProducts, mockRatings, downloadLinks };

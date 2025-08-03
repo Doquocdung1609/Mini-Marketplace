@@ -1,14 +1,16 @@
 [project]
-name = 'counter'
-description = ''
+name = 'marketplace'
+description = 'A decentralized marketplace on Stacks'
 authors = []
 telemetry = false
 cache_dir = '.\.cache'
 requirements = []
-[contracts.counter]
-path = 'contracts/counter.clar'
+
+[contracts.marketplace]
+path = 'contracts/marketplace.clar'
 clarity_version = 3
 epoch = 3.1
+
 [repl.analysis]
 passes = ['check_checker']
 
