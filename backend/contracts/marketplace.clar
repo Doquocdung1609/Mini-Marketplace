@@ -1,4 +1,4 @@
-(define-constant admin 'ST3BZQ4ASRGPM8ANTZ1786EM9X2GW9S6JAC5YZJYC) ;; Admin address
+(define-constant admin 'ST33SSQ904GZKAJDKYN2GFX9JM5ZBGV3R889DCKY4) ;; Admin address
 (define-constant fee-percent u5) ;; 5% fee
 
 ;; Error codes
