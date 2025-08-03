@@ -21,13 +21,19 @@ function ProductList({ products, userAddress, onBuyProduct, onUnlistProduct, onS
             key={product.id}
             className="bg-white p-4 rounded-lg shadow-md hover:shadow-lg transition transform hover:scale-105 border border-gray-200"
           >
-            <img src={product.image} alt={product.name} className="w-full h-40 object-cover rounded-lg mb-4" />
+            {product.image ? (
+              <img src={product.image} alt={product.name} className="w-full h-40 object-cover rounded-lg mb-4" />
+            ) : (
+              <div className="w-full h-40 bg-gray-200 rounded-lg mb-4 flex items-center justify-center">
+                No Image
+              </div>
+            )}
             <div className="text-center space-y-2">
               <h3 className="text-lg font-semibold text-gray-800">{product.name}</h3>
               <p className="text-gray-600"><strong>Price:</strong> {product.price} microSTX</p>
               <p className="text-gray-600"><strong>Quantity:</strong> {product.quantity}</p>
               <p className="text-gray-600"><strong>Sold:</strong> {product.sold}</p>
-              <p className="text-gray-600"><strong>Rating:</strong> {product.avgRating.toFixed(1)} / 5</p>
+              <p className="text-gray-600"><strong>Rating:</strong> {typeof product.avgRating === 'number' ? product.avgRating.toFixed(1) : '0.0'} / 5</p>
               <p className="text-gray-600"><strong>Revenue:</strong> {product.revenue} microSTX</p>
               {role === 'buyer' && product.quantity > 0 && (
                 <button

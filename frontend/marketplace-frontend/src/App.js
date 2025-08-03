@@ -36,7 +36,8 @@ const AppContent = () => {
       if (!user || !user.stacksAddress) throw new Error('User not authenticated');
       const lastIdResult = await callReadOnly('get-last-id', [], user.stacksAddress);
       const lastId = lastIdResult.value || 0;
-      
+      console.log('Last ID:', lastId); // Debug: Kiểm tra lastId
+
       const productPromises = [];
       for (let id = 1; id <= lastId; id++) {
         productPromises.push(
@@ -50,27 +51,30 @@ const AppContent = () => {
       const productResults = await Promise.all(productPromises);
       const productList = productResults
         .map(([productResult, ratingResult], index) => {
-          if (productResult.value) {
-            const product = productResult.value;
+          const id = index + 1;
+          console.log('Product Result:', productResult); // Debug: Kiểm tra dữ liệu thô
+          if (productResult && productResult.value && productResult.value.value) {
+            const product = productResult.value.value; // Truy cập vào level lồng nhau
             return {
-              id: index + 1,
-              name: `Product #${index + 1}`,
-              ipfsHash: product.ipfsHash.value,
-              price: product.price.value,
-              owner: product.seller.value,
-              description: `Description for product #${index + 1}`,
-              image: product.ipfsHash.value,
-              quantity: product.quantity.value,
-              sold: product.isSold.value ? 1 : 0,
-              revenue: product.revenue.value,
-              category: product.category.value,
-              avgRating: ratingResult.value ? ratingResult.value : 0,
+              id,
+              name: `Product #${id}`,
+              ipfsHash: product.ipfsHash?.value || product['ipfs-hash']?.value || null,
+              price: product.price?.value ? Number(product.price.value) : 0,
+              owner: product.seller?.value || product['seller']?.value || '',
+              description: `Description for product #${id}`,
+              image: product.ipfsHash?.value || product['ipfs-hash']?.value || null,
+              quantity: product.quantity?.value ? Number(product.quantity.value) : 0,
+              sold: product.isSold?.value === true ? 1 : 0,
+              revenue: product.revenue?.value ? Number(product.revenue.value) : 0,
+              category: product.category?.value || product['category']?.value || '',
+              avgRating: ratingResult.value ? Number(ratingResult.value) : 0,
             };
           }
           return null;
         })
         .filter(p => p !== null);
 
+      console.log('Product List:', productList); // Debug: Kiểm tra danh sách sản phẩm sau ánh xạ
       setProducts(productList);
       setError(null);
     } catch (error) {
@@ -137,10 +141,8 @@ const AppContent = () => {
   };
 
   const handleSignOut = () => {
-    // Xóa thông tin đăng nhập khỏi localStorage
     localStorage.removeItem('stacksAddress');
     localStorage.removeItem('role');
-    // Đặt lại trạng thái
     setUser(null);
     setRole('');
     setProducts([]);
@@ -149,7 +151,6 @@ const AppContent = () => {
     setSelectedProduct(null);
     setDownloadLinks({});
     setSellerNotifications({});
-    // Điều hướng về trang chủ
     navigate('/');
   };
 
@@ -448,7 +449,13 @@ const AppContent = () => {
                         className="bg-white p-4 rounded-lg shadow-md hover:shadow-lg transition cursor-pointer"
                         onClick={() => handleViewSuggestedProduct(product)}
                       >
-                        <img src={product.image} alt={product.name} className="w-full h-40 object-cover rounded-lg mb-4" />
+                        {product.image ? (
+                          <img src={product.image} alt={product.name} className="w-full h-40 object-cover rounded-lg mb-4" />
+                        ) : (
+                          <div className="w-full h-40 bg-gray-200 rounded-lg mb-4 flex items-center justify-center">
+                            No Image
+                          </div>
+                        )}
                         <h4 className="text-lg font-semibold text-gray-800">{product.name}</h4>
                         <p className="text-gray-600">Price: {product.price} microSTX</p>
                       </div>
